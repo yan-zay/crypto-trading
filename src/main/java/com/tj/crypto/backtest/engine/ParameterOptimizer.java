@@ -103,6 +103,66 @@ public final class ParameterOptimizer {
     }
 
     /**
+     * 运行 MACD 参数网格搜索优化（指定时间范围和数据提供者）。
+     * 用于 Walk-forward 优化等需要精确控制时间窗口的场景。
+     *
+     * @param instrument     交易工具
+     * @param timeframe      时间周期
+     * @param startTime      起始时间（毫秒）
+     * @param endTime        结束时间（毫秒）
+     * @param initialBalance 初始资金
+     * @param fastPeriods    MACD 快线周期搜索范围
+     * @param slowPeriods    MACD 慢线周期搜索范围
+     * @param signalPeriods  MACD 信号线周期搜索范围
+     * @param dataProvider   历史数据提供者（可复用）
+     * @return 按总收益率降序排列的优化结果列表
+     */
+    public List<OptimizationResult> optimizeMacd(Instrument instrument, Timeframe timeframe,
+                                                  long startTime, long endTime,
+                                                  double initialBalance,
+                                                  int[] fastPeriods, int[] slowPeriods,
+                                                  int[] signalPeriods,
+                                                  HistoricalDataProvider dataProvider) {
+        log.info("Starting MACD parameter optimization: {} {} [{}, {}] initialBalance={}, params=[fast:{}, slow:{}, signal:{}]",
+                instrument.symbol(), timeframe.getCode(), startTime, endTime, initialBalance,
+                formatArray(fastPeriods), formatArray(slowPeriods), formatArray(signalPeriods));
+
+        // 1. 生成所有参数组合
+        List<int[]> combinations = generateCombinations(fastPeriods, slowPeriods, signalPeriods);
+        log.info("Generated {} parameter combinations to test.", combinations.size());
+
+        // 2. 并行运行回测
+        ExecutorService executor = Executors.newFixedThreadPool(
+                Math.min(combinations.size(), Runtime.getRuntime().availableProcessors()));
+
+        try {
+            List<CompletableFuture<OptimizationResult>> futures = combinations.stream()
+                    .map(params -> CompletableFuture.supplyAsync(() -> {
+                        int fast = params[0];
+                        int slow = params[1];
+                        int signal = params[2];
+                        return runSingleOptimization(instrument, timeframe, startTime, endTime,
+                                initialBalance, fast, slow, signal, dataProvider);
+                    }, executor))
+                    .collect(Collectors.toList());
+
+            // 3. 等待所有回测完成并收集结果
+            List<OptimizationResult> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .collect(Collectors.toList());
+
+            // 4. 按总收益率降序排列
+            Collections.sort(results);
+
+            log.info("Optimization complete. {} results generated.", results.size());
+            return results;
+
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    /**
      * 运行 MACD 参数网格搜索优化（返回 Top N）。
      *
      * @param symbol         交易对符号
