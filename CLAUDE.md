@@ -96,7 +96,7 @@ Key runtime packages (133 source files, 43 packages):
 
 ## Known Gaps To Respect
 
-- ~~Full tests may currently be red.~~ **RESOLVED** — 209 tests, all green.
+- ~~Full tests may currently be red.~~ **RESOLVED** — 334 tests, all green.
 - Application startup currently depends on MySQL because `AppLifecycleListener` queries `TradeSymbolMapper` on `ApplicationReadyEvent`.
 - ~~Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.~~ **RESOLVED** — BacktestEngine integrates ExecutionEngine, RiskEngine, PositionSizer, and SlippageModel. Full backtest verification tests pass.
 - Account equity, margin, short position semantics, fee model, min notional, precision, funding fee, and liquidation rules are not yet production-grade.
@@ -129,7 +129,7 @@ High-level direction:
 
 以下是按优先级排列的持续开发迭代任务。每项任务适合用 `/loop` 或 Workflow 驱动完成。
 
-### ✅ 已完成任务 (L1-L9)
+### ✅ 已完成任务 (L1-L10)
 
 | # | 任务 | 状态 | 说明 |
 |---|------|------|------|
@@ -142,9 +142,17 @@ High-level direction:
 | L7 | 模拟交易引擎 | ✅ 完成 | PaperTradingEngine + VirtualAccount，PortfolioBacktestTest 通过 |
 | L8 | 执行引擎 | ✅ 完成 | ExecutionEngine + FixedSlippageModel，ExecutionEngineTest 通过 |
 | L9 | 可观测性基础 | ✅ 完成 | observability 包基础指标，DataQualityChecker 数据质量检查 |
+| L10 | 策略热加载 | ✅ 完成 | StrategyManager 支持运行时启用/禁用策略，AdminController 提供 REST API，StrategyHotReloadIntegration 验证 |
 
-### 🔴 待办任务
+### ✅ 已完成任务 (L11-L18)
 
-| # | 任务 | 预期产出 | 前置依赖 |
-|---|------|---------|---------|
-| L10 | 实现策略热加载，支持通过 YAML 配置文件动态添加/修改/禁用策略，无需重启应用 | 策略灵活管理 | L5 |
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| L11 | Admin 管理 API | ✅ 完成 | AdminController 提供 /status、/signals、/factors、/strategies、/health 端点，AdminControllerTest 通过 |
+| L12 | 风控引擎 | ✅ 完成 | RiskEngine + 3 条规则（MaxDailyLoss/MaxLossPerTrade/MaxPositionSize），RiskEngineTest 通过 |
+| L13 | 仓位管理 | ✅ 完成 | PositionSizer 计算仓位大小，ExecutionEngine 集成风控+仓位+滑点 |
+| L14 | 持久化层 | ✅ 完成 | EventPersistenceListener + BarEvent/SignalEvent/TradeRecord 转换器+Mapper+Service |
+| L15 | 策略扩展到 6 个 | ✅ 完成 | LiquidationSpike/MacdCross/RsiCross/SuperTrend/BollingerBreakout/AtrTrailingStop |
+| L16 | 组合回测引擎 | ✅ 完成 | PortfolioBacktestEngine 支持多策略独立回测+合并报告，FourStrategyPortfolioTest 通过 |
+| L17 | Walk-Forward 优化 | ✅ 完成 | WalkForwardOptimizer 支持滚动窗口参数优化，WalkForwardTest 通过 |
+| L18 | 最终集成验证 | ✅ 完成 | FinalIntegrationTest 覆盖数据管线、回测管线、Admin API、策略热加载、4 策略组合回测，334 测试全部通过 |
