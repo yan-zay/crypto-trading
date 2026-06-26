@@ -2,11 +2,11 @@ package com.tj.crypto.factor.technical;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.indicators.EMAIndicator;
@@ -19,12 +19,16 @@ import java.util.List;
  * EMA（指数移动平均线）因子。
  * 使用 TA4J 计算指定周期的收盘价指数移动平均。
  */
-@AllArgsConstructor
 @Component
 public class EmaFactor implements FactorCalculator {
 
     private final BarCache barCache;
-    private final int period = 20;
+    private final int period;
+
+    public EmaFactor(BarCache barCache, FactorProperties factorProperties) {
+        this.barCache = barCache;
+        this.period = factorProperties.getEmaPeriod();
+    }
 
     @Override
     public String name() {

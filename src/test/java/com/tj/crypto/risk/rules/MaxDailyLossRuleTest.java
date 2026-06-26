@@ -17,25 +17,24 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MaxLossPerTradeRuleTest {
+class MaxDailyLossRuleTest {
 
-    private MaxLossPerTradeRule rule;
+    private MaxDailyLossRule rule;
     private Instrument btcUsdt;
     private VirtualAccount account;
 
     @BeforeEach
     void setUp() {
         RiskProperties riskProperties = new RiskProperties();
-        riskProperties.setMaxLossPerTradePct(BigDecimal.valueOf(2)); // 2%
-        rule = new MaxLossPerTradeRule(riskProperties);
+        riskProperties.setMaxDailyLossPct(BigDecimal.valueOf(5)); // 5%
+        rule = new MaxDailyLossRule(riskProperties);
         btcUsdt = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
         account = new VirtualAccount(BigDecimal.valueOf(10000));
     }
 
     @Test
-    @DisplayName("订单金额在限制内应通过")
-    void shouldPassWhenWithinLimit() {
-        // 0.01 BTC * $16000 = $160 < $200 (2% of 10000)
+    @DisplayName("无交易记录时应通过")
+    void shouldPassWhenNoTrades() {
         Order order = Order.create(btcUsdt, OrderSide.LONG, OrderType.MARKET,
                 BigDecimal.valueOf(0.01), BigDecimal.valueOf(16000), 1000L);
 
@@ -44,11 +43,32 @@ class MaxLossPerTradeRuleTest {
     }
 
     @Test
-    @DisplayName("订单金额超出限制应拒绝")
-    void shouldRejectWhenExceedsLimit() {
-        // 0.02 BTC * $16000 = $320 > $200 (2% of 10000)
+    @DisplayName("当日亏损未超限时应通过")
+    void shouldPassWhenDailyLossWithinLimit() {
+        // 亏损 $100 < $500 (5% of 10000)
+        long now = System.currentTimeMillis();
+        account.openPosition(btcUsdt, OrderSide.LONG,
+                BigDecimal.valueOf(0.1), BigDecimal.valueOf(16000), now - 3600_000);
+        account.closePosition(btcUsdt, BigDecimal.valueOf(15000), now);
+
         Order order = Order.create(btcUsdt, OrderSide.LONG, OrderType.MARKET,
-                BigDecimal.valueOf(0.02), BigDecimal.valueOf(16000), 1000L);
+                BigDecimal.valueOf(0.01), BigDecimal.valueOf(16000), 1000L);
+
+        RiskCheckResult result = rule.check(order, account);
+        assertThat(result.isPassed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("当日亏损超限时应拒绝")
+    void shouldRejectWhenDailyLossExceedsLimit() {
+        // 亏损 $600 > $500 (5% of 10000)
+        long now = System.currentTimeMillis();
+        account.openPosition(btcUsdt, OrderSide.LONG,
+                BigDecimal.valueOf(0.1), BigDecimal.valueOf(16000), now - 3600_000);
+        account.closePosition(btcUsdt, BigDecimal.valueOf(10000), now);
+
+        Order order = Order.create(btcUsdt, OrderSide.LONG, OrderType.MARKET,
+                BigDecimal.valueOf(0.01), BigDecimal.valueOf(16000), 1000L);
 
         RiskCheckResult result = rule.check(order, account);
         assertThat(result.isPassed()).isFalse();

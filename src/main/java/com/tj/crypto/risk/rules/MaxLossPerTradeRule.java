@@ -4,6 +4,7 @@ import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
+import com.tj.crypto.risk.RiskProperties;
 import com.tj.crypto.risk.RiskRule;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +18,11 @@ import java.math.RoundingMode;
 @Component
 public class MaxLossPerTradeRule implements RiskRule {
 
-    /** 最大单笔亏损占比（%），默认 2% */
-    private BigDecimal maxLossPct = BigDecimal.valueOf(2.0);
+    private final BigDecimal maxLossPct;
+
+    public MaxLossPerTradeRule(RiskProperties riskProperties) {
+        this.maxLossPct = riskProperties.getMaxLossPerTradePct();
+    }
 
     @Override
     public String name() {
@@ -38,9 +42,5 @@ public class MaxLossPerTradeRule implements RiskRule {
             );
         }
         return RiskCheckResult.passed();
-    }
-
-    public void setMaxLossPct(BigDecimal maxLossPct) {
-        this.maxLossPct = maxLossPct;
     }
 }

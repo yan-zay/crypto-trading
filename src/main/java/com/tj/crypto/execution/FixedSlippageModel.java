@@ -2,6 +2,7 @@ package com.tj.crypto.execution;
 
 import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.execution.model.OrderType;
+import com.tj.crypto.risk.RiskProperties;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -18,8 +19,11 @@ import java.math.RoundingMode;
 @Component
 public class FixedSlippageModel implements SlippageModel {
 
-    /** 滑点基点（1 bp = 0.01%），默认 5 bps */
-    private int slippageBps = 5;
+    private final int slippageBps;
+
+    public FixedSlippageModel(RiskProperties riskProperties) {
+        this.slippageBps = riskProperties.getSlippageBps();
+    }
 
     @Override
     public BigDecimal applySlippage(BigDecimal price, OrderSide side, OrderType type) {
@@ -37,9 +41,5 @@ public class FixedSlippageModel implements SlippageModel {
             // 卖出：价格下滑
             return price.multiply(BigDecimal.ONE.subtract(slippageFactor));
         }
-    }
-
-    public void setSlippageBps(int slippageBps) {
-        this.slippageBps = slippageBps;
     }
 }

@@ -17,25 +17,25 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MaxLossPerTradeRuleTest {
+class MaxPositionSizeRuleTest {
 
-    private MaxLossPerTradeRule rule;
+    private MaxPositionSizeRule rule;
     private Instrument btcUsdt;
     private VirtualAccount account;
 
     @BeforeEach
     void setUp() {
         RiskProperties riskProperties = new RiskProperties();
-        riskProperties.setMaxLossPerTradePct(BigDecimal.valueOf(2)); // 2%
-        rule = new MaxLossPerTradeRule(riskProperties);
+        riskProperties.setMaxSizePct(BigDecimal.valueOf(30)); // 30%
+        rule = new MaxPositionSizeRule(riskProperties);
         btcUsdt = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
         account = new VirtualAccount(BigDecimal.valueOf(10000));
     }
 
     @Test
-    @DisplayName("订单金额在限制内应通过")
+    @DisplayName("持仓金额在限制内应通过")
     void shouldPassWhenWithinLimit() {
-        // 0.01 BTC * $16000 = $160 < $200 (2% of 10000)
+        // 0.01 BTC * $16000 = $160 < $3000 (30% of 10000)
         Order order = Order.create(btcUsdt, OrderSide.LONG, OrderType.MARKET,
                 BigDecimal.valueOf(0.01), BigDecimal.valueOf(16000), 1000L);
 
@@ -44,11 +44,11 @@ class MaxLossPerTradeRuleTest {
     }
 
     @Test
-    @DisplayName("订单金额超出限制应拒绝")
+    @DisplayName("持仓金额超出限制应拒绝")
     void shouldRejectWhenExceedsLimit() {
-        // 0.02 BTC * $16000 = $320 > $200 (2% of 10000)
+        // 0.25 BTC * $16000 = $4000 > $3000 (30% of 10000)
         Order order = Order.create(btcUsdt, OrderSide.LONG, OrderType.MARKET,
-                BigDecimal.valueOf(0.02), BigDecimal.valueOf(16000), 1000L);
+                BigDecimal.valueOf(0.25), BigDecimal.valueOf(16000), 1000L);
 
         RiskCheckResult result = rule.check(order, account);
         assertThat(result.isPassed()).isFalse();

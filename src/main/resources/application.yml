@@ -41,3 +41,17 @@ crypto:
       macd-cross:
         enabled: true
         symbols: [BTCUSDT, ETHUSDT]
+  risk:
+    max-loss-per-trade-pct: 2.0
+    max-daily-loss-pct: 5.0
+    max-size-pct: 30.0
+    slippage-bps: 5
+  factor:
+    sma-period: 20
+    ema-period: 20
+    macd-fast: 12
+    macd-slow: 26
+    macd-signal: 9
+    rsi-period: 14
+    bb-period: 20
+    bb-std-dev: 2.0

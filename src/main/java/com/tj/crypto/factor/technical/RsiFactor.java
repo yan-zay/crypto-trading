@@ -2,11 +2,11 @@ package com.tj.crypto.factor.technical;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.indicators.RSIIndicator;
@@ -19,12 +19,16 @@ import java.util.List;
  * RSI（相对强弱指标）因子。
  * 范围 0-100，通常 >70 超买，<30 超卖。
  */
-@AllArgsConstructor
 @Component
 public class RsiFactor implements FactorCalculator {
 
     private final BarCache barCache;
-    private final int period = 14;
+    private final int period;
+
+    public RsiFactor(BarCache barCache, FactorProperties factorProperties) {
+        this.barCache = barCache;
+        this.period = factorProperties.getRsiPeriod();
+    }
 
     @Override
     public String name() {

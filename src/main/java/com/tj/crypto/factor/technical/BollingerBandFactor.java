@@ -2,11 +2,11 @@ package com.tj.crypto.factor.technical;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.indicators.bollinger.PercentBIndicator;
@@ -20,13 +20,18 @@ import java.util.List;
  * 使用 TA4J 0.17 的 PercentBIndicator 直接计算。
  * %B > 1 价格在上轨之上，%B < 0 价格在下轨之下，%B = 0.5 价格在中轨。
  */
-@AllArgsConstructor
 @Component
 public class BollingerBandFactor implements FactorCalculator {
 
     private final BarCache barCache;
-    private final int period = 20;
-    private final double stdDevMultiplier = 2.0;
+    private final int period;
+    private final double stdDevMultiplier;
+
+    public BollingerBandFactor(BarCache barCache, FactorProperties factorProperties) {
+        this.barCache = barCache;
+        this.period = factorProperties.getBbPeriod();
+        this.stdDevMultiplier = factorProperties.getBbStdDev();
+    }
 
     @Override
     public String name() {

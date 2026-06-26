@@ -5,6 +5,7 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.event.InMemoryEventBus;
+import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.cache.InMemoryBarCache;
 import com.tj.crypto.factor.core.Factor;
@@ -28,7 +29,7 @@ class SmaFactorTest {
     @BeforeEach
     void setUp() {
         barCache = new InMemoryBarCache(new InMemoryEventBus());
-        smaFactor = new SmaFactor(barCache);
+        smaFactor = new SmaFactor(barCache, new FactorProperties());
         btcUsdt = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
     }
 

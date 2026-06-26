@@ -5,6 +5,7 @@ import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
+import com.tj.crypto.risk.RiskProperties;
 import com.tj.crypto.risk.RiskRule;
 import org.springframework.stereotype.Component;
 
@@ -18,8 +19,11 @@ import java.math.RoundingMode;
 @Component
 public class MaxDailyLossRule implements RiskRule {
 
-    /** 最大每日亏损占比（%），默认 5% */
-    private BigDecimal maxDailyLossPct = BigDecimal.valueOf(5.0);
+    private final BigDecimal maxDailyLossPct;
+
+    public MaxDailyLossRule(RiskProperties riskProperties) {
+        this.maxDailyLossPct = riskProperties.getMaxDailyLossPct();
+    }
 
     @Override
     public String name() {
@@ -53,9 +57,5 @@ public class MaxDailyLossRule implements RiskRule {
     private long getTodayStartMillis() {
         // 简化：使用当前时间 - 24小时
         return System.currentTimeMillis() - 24 * 60 * 60 * 1000;
-    }
-
-    public void setMaxDailyLossPct(BigDecimal maxDailyLossPct) {
-        this.maxDailyLossPct = maxDailyLossPct;
     }
 }

@@ -49,7 +49,7 @@ class StrategyEngineEventTest {
         SignalCollector signalCollector = mock(SignalCollector.class);
 
         // 创建策略引擎（不注入真实策略，用空列表替代）
-        strategyEngine = new StrategyEngine(executor, eventBus, context, signalCollector, List.of(), List.of());
+        strategyEngine = new StrategyEngine(executor, eventBus, context, signalCollector, List.of());
         strategyEngine.init();
     }
 
@@ -91,17 +91,6 @@ class StrategyEngineEventTest {
         eventBus.publish(event);
 
         assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
-    }
-
-    @Test
-    @DisplayName("callOnEvent 应可被外部调用（不再是 private）")
-    void shouldAllowPublicCallOnEvent() {
-        // 验证方法是 public 的（编译通过即验证）
-        // 空策略列表，调用不应抛异常
-        strategyEngine.callOnEvent(
-                com.tj.crypto.enums.Symbol.BTC_USDT,
-                com.tj.crypto.enums.Indicator.LIQUIDATION
-        );
     }
 
     @Test

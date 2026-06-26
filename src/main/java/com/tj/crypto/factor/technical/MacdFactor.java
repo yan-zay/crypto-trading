@@ -2,11 +2,11 @@ package com.tj.crypto.factor.technical;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.indicators.EMAIndicator;
@@ -20,19 +20,22 @@ import java.util.List;
  * MACD 因子。
  * 返回 MACD 柱状图（MACD 线 - 信号线）。
  *
- * MACD 金叉：histogram 从负变正 → 买入信号
- * MACD 死叉：histogram 从正变负 → 卖出信号
+ * MACD 金叉：histogram 从负变正 -> 买入信号
+ * MACD 死叉：histogram 从正变负 -> 卖出信号
  */
 @Component
 public class MacdFactor implements FactorCalculator {
 
     private final BarCache barCache;
-    private final int fastPeriod = 12;
-    private final int slowPeriod = 26;
-    private final int signalPeriod = 9;
+    private final int fastPeriod;
+    private final int slowPeriod;
+    private final int signalPeriod;
 
-    public MacdFactor(BarCache barCache) {
+    public MacdFactor(BarCache barCache, FactorProperties factorProperties) {
         this.barCache = barCache;
+        this.fastPeriod = factorProperties.getMacdFast();
+        this.slowPeriod = factorProperties.getMacdSlow();
+        this.signalPeriod = factorProperties.getMacdSignal();
     }
 
     @Override

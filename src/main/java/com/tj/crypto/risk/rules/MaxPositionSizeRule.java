@@ -4,6 +4,7 @@ import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
+import com.tj.crypto.risk.RiskProperties;
 import com.tj.crypto.risk.RiskRule;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +18,11 @@ import java.math.RoundingMode;
 @Component
 public class MaxPositionSizeRule implements RiskRule {
 
-    /** 最大持仓占比（%），默认 30% */
-    private BigDecimal maxSizePct = BigDecimal.valueOf(30.0);
+    private final BigDecimal maxSizePct;
+
+    public MaxPositionSizeRule(RiskProperties riskProperties) {
+        this.maxSizePct = riskProperties.getMaxSizePct();
+    }
 
     @Override
     public String name() {
@@ -40,9 +44,5 @@ public class MaxPositionSizeRule implements RiskRule {
             );
         }
         return RiskCheckResult.passed();
-    }
-
-    public void setMaxSizePct(BigDecimal maxSizePct) {
-        this.maxSizePct = maxSizePct;
     }
 }

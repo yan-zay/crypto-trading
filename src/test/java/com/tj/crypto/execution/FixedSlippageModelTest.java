@@ -2,6 +2,7 @@ package com.tj.crypto.execution;
 
 import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.execution.model.OrderType;
+import com.tj.crypto.risk.RiskProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,8 +17,9 @@ class FixedSlippageModelTest {
 
     @BeforeEach
     void setUp() {
-        model = new FixedSlippageModel();
-        model.setSlippageBps(10); // 10 bps = 0.1%
+        RiskProperties riskProperties = new RiskProperties();
+        riskProperties.setSlippageBps(10); // 10 bps = 0.1%
+        model = new FixedSlippageModel(riskProperties);
     }
 
     @Test
