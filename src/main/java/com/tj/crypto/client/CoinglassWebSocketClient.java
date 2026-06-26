@@ -105,7 +105,8 @@ public class CoinglassWebSocketClient {
         }
     }
 
-    private static final List<String> symbolList = List.of("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "DOGEUSDT", "TRUMPUSDT");
+    /** 支持的交易对基础资产（Coinglass 发送的 symbol 格式不统一，按 baseAsset 过滤更可靠） */
+    private static final List<String> supportedBaseAssets = List.of("BTC", "ETH", "BNB", "SOL", "DOGE", "TRUMP");
 
     private final Map<String, ConcurrentLinkedDeque<KLineData>> symbolOneMinuteData = new ConcurrentHashMap<>();
     private final Map<String, ConcurrentLinkedDeque<KLineData>> symbolFiveMinuteData = new ConcurrentHashMap<>();
@@ -115,12 +116,16 @@ public class CoinglassWebSocketClient {
             List<LiquidationOrder> orderList = result.getData();
             for (LiquidationOrder order : orderList) {
                 if (order != null) {
+                    // Coinglass symbol 格式不统一（"BTCUSDT", "BTC-USDT-SWAP", "BTC-USD"）
+                    // 按 baseAsset 过滤更可靠
+                    String baseAsset = order.getBaseAsset();
+                    if (baseAsset == null || !supportedBaseAssets.contains(baseAsset)) {
+                        continue;
+                    }
+
                     String symbol = order.getSymbol();
                     BigDecimal volUsd = order.getVolUsd();
                     long timestamp = order.getTime();
-                    if (!symbolList.contains(symbol)) {
-                        continue;
-                    }
 
                     // 处理1分钟维度数据（保留现有聚合逻辑）
                     updateKLineData(symbolOneMinuteData, symbol, timestamp, volUsd, 60 * 1000);

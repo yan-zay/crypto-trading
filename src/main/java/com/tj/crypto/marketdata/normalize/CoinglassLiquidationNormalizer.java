@@ -33,8 +33,10 @@ public class CoinglassLiquidationNormalizer {
      */
     public LiquidationEvent normalize(LiquidationOrder order) {
         try {
-            // 使用 Coinglass 作为交易所标识（数据来自 Coinglass 聚合）
-            Instrument instrument = Instrument.of(Exchange.COINGLASS, MarketType.PERPETUAL, order.getSymbol());
+            // Coinglass symbol 格式不统一：BTCUSDT, BTC-USDT-SWAP, BTC-USD
+            // 统一转换为 BASEUSDT 格式
+            String normalizedSymbol = normalizeSymbol(order.getSymbol(), order.getBaseAsset());
+            Instrument instrument = Instrument.of(Exchange.COINGLASS, MarketType.PERPETUAL, normalizedSymbol);
 
             OrderSide side;
             try {
@@ -60,5 +62,32 @@ public class CoinglassLiquidationNormalizer {
             log.error("Failed to normalize Coinglass liquidation: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * 标准化 Coinglass symbol 格式。
+     * 输入可能是：BTCUSDT, BTC-USDT-SWAP, BTC-USD
+     * 输出统一为：BTCUSDT
+     */
+    private String normalizeSymbol(String symbol, String baseAsset) {
+        if (symbol == null && baseAsset == null) return null;
+        if (symbol == null) return baseAsset + "USDT";
+
+        // 已经是标准格式（无连字符）
+        if (!symbol.contains("-")) {
+            return symbol;
+        }
+
+        // BTC-USDT-SWAP → BTCUSDT
+        // BTC-USD → BTCUSDT（假设 USD 等同于 USDT）
+        String[] parts = symbol.split("-");
+        if (parts.length >= 2) {
+            String base = parts[0];
+            String quote = parts[1];
+            if ("USD".equals(quote)) quote = "USDT";
+            return base + quote;
+        }
+
+        return symbol.replace("-", "");
     }
 }
