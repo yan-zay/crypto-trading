@@ -56,4 +56,21 @@ public class FactorProperties {
 
     /** ADX（平均趋向指数）周期，默认 14 */
     private int adxPeriod = 14;
+
+    /**
+     * 创建自定义 MACD 参数的 FactorProperties 实例。
+     * 其余参数使用默认值。
+     *
+     * @param fast   MACD 快线周期
+     * @param slow   MACD 慢线周期
+     * @param signal MACD 信号线周期
+     * @return 新的 FactorProperties 实例
+     */
+    public static FactorProperties customMacd(int fast, int slow, int signal) {
+        FactorProperties props = new FactorProperties();
+        props.macdFast = fast;
+        props.macdSlow = slow;
+        props.macdSignal = signal;
+        return props;
+    }
 }
