@@ -9,6 +9,7 @@ import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.LiquidationEvent;
+import com.tj.crypto.strategy.core.StrategyContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * StrategyEngine 事件分发集成测试。
@@ -42,8 +44,10 @@ class StrategyEngineEventTest {
         executor.setThreadNamePrefix("test-");
         executor.initialize();
 
-        // 创建策略引擎（不注入真实策略，用测试策略替代）
-        strategyEngine = new StrategyEngine(executor, List.of(), eventBus);
+        StrategyContext context = mock(StrategyContext.class);
+
+        // 创建策略引擎（不注入真实策略，用空列表替代）
+        strategyEngine = new StrategyEngine(executor, eventBus, context, List.of(), List.of());
         strategyEngine.init();
     }
 

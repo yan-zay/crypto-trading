@@ -32,3 +32,12 @@ crypto:
   websocket:
     baseUrl: ${BINANCE_WS_BASE_URL:wss://fstream.binance.com}
     websocketUrl: ${BINANCE_WS_URL:wss://fstream.binance.com/ws/btcusdt@kline_1m}
+  strategy:
+    configs:
+      liquidation-spike:
+        enabled: true
+        threshold-usd: 1000000
+        symbols: [BTCUSDT, ETHUSDT]
+      macd-cross:
+        enabled: true
+        symbols: [BTCUSDT, ETHUSDT]
