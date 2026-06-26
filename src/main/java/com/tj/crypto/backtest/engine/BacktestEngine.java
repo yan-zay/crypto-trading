@@ -5,9 +5,9 @@ import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.backtest.report.PerformanceCalculator;
 import com.tj.crypto.backtest.report.PerformanceReport;
 import com.tj.crypto.common.domain.Instrument;
-import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.event.InMemoryEventBus;
+import com.tj.crypto.execution.ExecutionEngine;
 import com.tj.crypto.factor.cache.InMemoryBarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
@@ -17,11 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -40,11 +37,14 @@ public class BacktestEngine {
 
     private final PerformanceCalculator performanceCalculator;
     private final List<FactorCalculator> factorCalculators;
+    private final ExecutionEngine executionEngine;
 
     public BacktestEngine(PerformanceCalculator performanceCalculator,
-                          List<FactorCalculator> factorCalculators) {
+                          List<FactorCalculator> factorCalculators,
+                          ExecutionEngine executionEngine) {
         this.performanceCalculator = performanceCalculator;
         this.factorCalculators = factorCalculators;
+        this.executionEngine = executionEngine;
     }
 
     /**
@@ -81,7 +81,8 @@ public class BacktestEngine {
             SignalEvent signal = strategy.onEvent(bar, backtestContext);
             if (signal != null) {
                 signals.add(signal);
-                executeSignal(account, signal, bar.close(), bar.metadata().exchangeTimestamp());
+                // 通过 ExecutionEngine 执行（含风控 + 仓位 + 滑点）
+                executionEngine.execute(signal, account, bar.close(), bar.metadata().exchangeTimestamp());
             }
         });
 
@@ -103,18 +104,6 @@ public class BacktestEngine {
                 eventCount, signals.size(), account.getTrades().size(), report);
 
         return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
-    }
-
-    private void executeSignal(VirtualAccount account, SignalEvent signal,
-                               BigDecimal currentPrice, long timestamp) {
-        if (signal.type() == SignalType.BUY && !account.hasPosition(signal.instrument())) {
-            BigDecimal quantity = account.getBalance().divide(currentPrice, 6, RoundingMode.HALF_UP);
-            if (quantity.compareTo(BigDecimal.ZERO) > 0) {
-                account.openPosition(signal.instrument(), OrderSide.LONG, quantity, currentPrice, timestamp);
-            }
-        } else if (signal.type() == SignalType.SELL && account.hasPosition(signal.instrument())) {
-            account.closePosition(signal.instrument(), currentPrice, timestamp);
-        }
     }
 
     private void closeAllPositions(VirtualAccount account, Instrument instrument,

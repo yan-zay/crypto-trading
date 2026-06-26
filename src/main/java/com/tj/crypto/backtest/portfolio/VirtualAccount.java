@@ -105,10 +105,25 @@ public class VirtualAccount {
     }
 
     /**
-     * 获取总权益（余额 + 未实现盈亏）。
+     * 获取持仓市值（所有持仓按当前价格计算的总价值）。
+     */
+    public BigDecimal getPositionMarketValue(Map<String, BigDecimal> currentPrices) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map.Entry<String, Position> entry : positions.entrySet()) {
+            BigDecimal price = currentPrices.get(entry.getKey());
+            if (price != null) {
+                total = total.add(entry.getValue().quantity().multiply(price));
+            }
+        }
+        return total;
+    }
+
+    /**
+     * 获取总权益 = 余额 + 持仓市值。
+     * 开仓时余额已扣除成本，所以权益 = 余额 + 持仓当前市值。
      */
     public BigDecimal getTotalEquity(Map<String, BigDecimal> currentPrices) {
-        return balance.add(getUnrealizedPnL(currentPrices));
+        return balance.add(getPositionMarketValue(currentPrices));
     }
 
     public BigDecimal getBalance() { return balance; }

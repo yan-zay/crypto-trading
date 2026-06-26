@@ -8,10 +8,15 @@ import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.execution.ExecutionEngine;
+import com.tj.crypto.execution.FixedSlippageModel;
+import com.tj.crypto.risk.RiskProperties;
 import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.MarketEvent;
+import com.tj.crypto.risk.PositionSizer;
+import com.tj.crypto.risk.RiskEngine;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
@@ -38,7 +43,10 @@ class BacktestEngineTest {
     void setUp() {
         PerformanceCalculator performanceCalculator = new PerformanceCalculator();
         List<FactorCalculator> factorCalculators = List.of();
-        engine = new BacktestEngine(performanceCalculator, factorCalculators);
+        RiskProperties riskProperties = new RiskProperties();
+        ExecutionEngine executionEngine = new ExecutionEngine(
+                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties));
+        engine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);
 
         btcUsdt = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
 

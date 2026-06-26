@@ -73,10 +73,10 @@ public class PerformanceCalculator {
                 ? totalLoss.divide(BigDecimal.valueOf(losingTrades), SCALE, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        // 盈亏比
+        // 盈亏比（无亏损时设为 999.99，避免极端值）
         BigDecimal profitFactor = totalLoss.compareTo(BigDecimal.ZERO) > 0
                 ? totalWin.divide(totalLoss, SCALE, RoundingMode.HALF_UP)
-                : BigDecimal.valueOf(Double.MAX_VALUE);
+                : BigDecimal.valueOf(999.99);
 
         // 最大回撤（简化计算：基于交易序列）
         BigDecimal maxDrawdown = calculateMaxDrawdown(trades, initialBalance);
