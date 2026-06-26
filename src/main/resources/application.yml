@@ -24,6 +24,9 @@ id:
 
 # Coinglass API 配置
 crypto:
+  binance:
+    historical:
+      base-url: https://fapi.binance.com
   coinglass:
     api-key: ${COINGLASS_API_KEY:}
   proxy:

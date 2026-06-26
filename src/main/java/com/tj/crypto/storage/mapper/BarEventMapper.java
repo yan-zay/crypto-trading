@@ -1,5 +1,6 @@
 package com.tj.crypto.storage.mapper;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.tj.crypto.mapper.BaseMapperX;
 import com.tj.crypto.storage.entity.BarEventDO;
 import org.apache.ibatis.annotations.Mapper;
@@ -16,10 +17,23 @@ public interface BarEventMapper extends BaseMapperX<BarEventDO> {
      * 按交易对和时间周期查询最近的 K 线数据。
      */
     default List<BarEventDO> selectRecent(String symbol, String timeframe, int limit) {
-        return selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<BarEventDO>()
+        return selectList(new LambdaQueryWrapper<BarEventDO>()
                 .eq(BarEventDO::getSymbol, symbol)
                 .eq(BarEventDO::getTimeframe, timeframe)
                 .orderByDesc(BarEventDO::getOpenTime)
                 .last("LIMIT " + limit));
+    }
+
+    /**
+     * 按交易对、时间周期和时间范围查询 K 线数据（正序）。
+     */
+    default List<BarEventDO> selectByTimeRange(String symbol, String timeframe,
+                                                 long fromTime, long toTime) {
+        return selectList(new LambdaQueryWrapper<BarEventDO>()
+                .eq(BarEventDO::getSymbol, symbol)
+                .eq(BarEventDO::getTimeframe, timeframe)
+                .ge(BarEventDO::getOpenTime, fromTime)
+                .le(BarEventDO::getOpenTime, toTime)
+                .orderByAsc(BarEventDO::getOpenTime));
     }
 }
