@@ -28,6 +28,7 @@ import java.util.Map;
  * @param maxWinStreak         最大连胜次数
  * @param maxLoseStreak        最大连亏次数
  * @param monthlyReturns       月度收益（key: yyyy-MM, value: 收益额）
+ * @param totalFees            总手续费
  */
 public record PerformanceReport(
         BigDecimal totalReturn,
@@ -51,14 +52,24 @@ public record PerformanceReport(
         BigDecimal avgTradeDuration,
         int maxWinStreak,
         int maxLoseStreak,
-        Map<String, BigDecimal> monthlyReturns
+        Map<String, BigDecimal> monthlyReturns,
+        BigDecimal totalFees
 ) {
+    /**
+     * 紧凑构造函数，确保 totalFees 不为 null。
+     */
+    public PerformanceReport {
+        if (totalFees == null) {
+            totalFees = BigDecimal.ZERO;
+        }
+    }
+
     @Override
     public String toString() {
         return String.format(
                 "Performance Report [%.2f%% return, %.2f%% annReturn, %.2f%% maxDD, %.1f%% winRate, %d trades, " +
-                        "PF=%.2f, Sharpe=%.2f, Sortino=%.2f, Calmar=%.2f]",
+                        "PF=%.2f, Sharpe=%.2f, Sortino=%.2f, Calmar=%.2f, Fees=$%s]",
                 totalReturn, annualizedReturn, maxDrawdown, winRate, totalTrades,
-                profitFactor, sharpeRatio, sortinoRatio, calmarRatio);
+                profitFactor, sharpeRatio, sortinoRatio, calmarRatio, totalFees);
     }
 }

@@ -1,6 +1,7 @@
 package com.tj.crypto.backtest.engine;
 
 import com.tj.crypto.backtest.data.HistoricalDataProvider;
+import com.tj.crypto.backtest.portfolio.FeeModel;
 import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.backtest.report.PerformanceCalculator;
 import com.tj.crypto.backtest.report.PerformanceReport;
@@ -31,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * - 回测同步执行（事件总线同步派发），确保确定性
  * - 复用同一套 Strategy 接口和 MarketEvent 模型
  * - 使用最后一根 bar 的收盘价平仓（而非 0）
+ * - 支持手续费模型（可选）
  */
 @Slf4j
 @Component
@@ -39,13 +41,25 @@ public class BacktestEngine {
     private final PerformanceCalculator performanceCalculator;
     private final List<FactorCalculator> factorCalculators;
     private final ExecutionEngine executionEngine;
+    private final FeeModel feeModel;
 
     public BacktestEngine(PerformanceCalculator performanceCalculator,
                           List<FactorCalculator> factorCalculators,
-                          ExecutionEngine executionEngine) {
+                          ExecutionEngine executionEngine,
+                          FeeModel feeModel) {
         this.performanceCalculator = performanceCalculator;
         this.factorCalculators = factorCalculators;
         this.executionEngine = executionEngine;
+        this.feeModel = feeModel;
+    }
+
+    /**
+     * 便捷构造函数（无手续费模型）。
+     */
+    public BacktestEngine(PerformanceCalculator performanceCalculator,
+                          List<FactorCalculator> factorCalculators,
+                          ExecutionEngine executionEngine) {
+        this(performanceCalculator, factorCalculators, executionEngine, null);
     }
 
     /**
@@ -63,8 +77,8 @@ public class BacktestEngine {
         // 2. 创建回测专用 StrategyContext（带因子计算）
         StrategyContext backtestContext = new BacktestStrategyContext(backtestBarCache, factorCalculators);
 
-        // 3. 创建虚拟账户
-        VirtualAccount account = new VirtualAccount(config.initialBalance());
+        // 3. 创建虚拟账户（带手续费模型）
+        VirtualAccount account = new VirtualAccount(config.initialBalance(), feeModel);
 
         // 4. 收集信号
         List<SignalEvent> signals = new ArrayList<>();
@@ -101,8 +115,9 @@ public class BacktestEngine {
                 account.getTrades(), config.initialBalance(), finalBalance,
                 config.startTime(), config.endTime());
 
-        log.info("Backtest complete: {} events, {} signals, {} trades, {}",
-                eventCount, signals.size(), account.getTrades().size(), report);
+        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, {}",
+                eventCount, signals.size(), account.getTrades().size(),
+                account.getTotalFeesPaid(), report);
 
         return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
     }
@@ -129,9 +144,6 @@ public class BacktestEngine {
         InMemoryEventBus backtestEventBus = new InMemoryEventBus();
 
         // 2. 外部 BarCache 订阅回测事件总线（构造函数中完成）
-        //    如果 backtestBarCache 是 InMemoryBarCache 且传入新的 eventBus，
-        //    需要确保它订阅了正确的 eventBus。
-        //    这里创建一个新的 InMemoryBarCache，它会在构造函数中订阅 backtestEventBus。
         InMemoryBarCache barCache = (backtestBarCache instanceof InMemoryBarCache)
                 ? (InMemoryBarCache) backtestBarCache
                 : new InMemoryBarCache(backtestEventBus);
@@ -139,8 +151,8 @@ public class BacktestEngine {
         // 3. 创建回测专用 StrategyContext（带因子计算）
         StrategyContext backtestContext = new BacktestStrategyContext(barCache, factorCalculators);
 
-        // 4. 创建虚拟账户
-        VirtualAccount account = new VirtualAccount(config.initialBalance());
+        // 4. 创建虚拟账户（带手续费模型）
+        VirtualAccount account = new VirtualAccount(config.initialBalance(), feeModel);
 
         // 5. 收集信号
         List<SignalEvent> signals = new ArrayList<>();
@@ -176,8 +188,9 @@ public class BacktestEngine {
                 account.getTrades(), config.initialBalance(), finalBalance,
                 config.startTime(), config.endTime());
 
-        log.info("Backtest complete: {} events, {} signals, {} trades, {}",
-                eventCount, signals.size(), account.getTrades().size(), report);
+        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, {}",
+                eventCount, signals.size(), account.getTrades().size(),
+                account.getTotalFeesPaid(), report);
 
         return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
     }

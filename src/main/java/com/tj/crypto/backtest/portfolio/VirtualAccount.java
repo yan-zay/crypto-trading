@@ -19,18 +19,28 @@ import java.util.Map;
  * - 简单的多/空持仓模型（不支持同时多空）
  * - 开仓时冻结资金，平仓时释放
  * - 所有计算使用 BigDecimal
+ * - 支持手续费模型（可选）
  */
 @Slf4j
 public class VirtualAccount {
+
+    private static final int SCALE = 8;
 
     private BigDecimal balance;
     private final BigDecimal initialBalance;
     private final Map<String, Position> positions = new HashMap<>();
     private final List<Trade> trades = new ArrayList<>();
+    private final FeeModel feeModel;
+    private BigDecimal totalFeesPaid = BigDecimal.ZERO;
 
     public VirtualAccount(BigDecimal initialBalance) {
+        this(initialBalance, null);
+    }
+
+    public VirtualAccount(BigDecimal initialBalance, FeeModel feeModel) {
         this.initialBalance = initialBalance;
         this.balance = initialBalance;
+        this.feeModel = feeModel;
     }
 
     /**
@@ -41,8 +51,17 @@ public class VirtualAccount {
     public boolean openPosition(Instrument instrument, OrderSide side,
                                 BigDecimal quantity, BigDecimal price, long timestamp) {
         BigDecimal cost = quantity.multiply(price);
-        if (balance.compareTo(cost) < 0) {
-            log.warn("Insufficient balance: need {}, have {}", cost, balance);
+
+        // 计算开仓手续费
+        BigDecimal openFee = BigDecimal.ZERO;
+        if (feeModel != null) {
+            openFee = feeModel.calculateFee(side, quantity, price);
+        }
+
+        BigDecimal totalCost = cost.add(openFee);
+        if (balance.compareTo(totalCost) < 0) {
+            log.warn("Insufficient balance: need {} (cost={} + fee={}), have {}",
+                    totalCost, cost, openFee, balance);
             return false;
         }
 
@@ -52,9 +71,10 @@ public class VirtualAccount {
             return false;
         }
 
-        balance = balance.subtract(cost);
+        balance = balance.subtract(totalCost);
+        totalFeesPaid = totalFeesPaid.add(openFee);
         positions.put(key, new Position(instrument, side, quantity, price, timestamp));
-        log.debug("Opened {} {} {} @ ${}", side, quantity, instrument.symbol(), price);
+        log.debug("Opened {} {} {} @ ${}, fee=${}", side, quantity, instrument.symbol(), price, openFee);
         return true;
     }
 
@@ -72,8 +92,24 @@ public class VirtualAccount {
 
         BigDecimal pnl = pos.unrealizedPnL(price);
         BigDecimal originalCost = pos.quantity().multiply(pos.entryPrice());
-        // 退还原始成本 + 盈亏（多头和空头统一处理）
-        balance = balance.add(originalCost).add(pnl);
+
+        // 计算平仓手续费
+        OrderSide closeSide = pos.side() == OrderSide.LONG ? OrderSide.SHORT : OrderSide.LONG;
+        BigDecimal closeFee = BigDecimal.ZERO;
+        if (feeModel != null) {
+            closeFee = feeModel.calculateFee(closeSide, pos.quantity(), price);
+        }
+
+        // 退还原始成本 + 盈亏 - 平仓手续费
+        balance = balance.add(originalCost).add(pnl).subtract(closeFee);
+        totalFeesPaid = totalFeesPaid.add(closeFee);
+
+        // 总手续费 = 开仓手续费 + 平仓手续费（开仓手续费已从余额扣除，这里记录在 Trade 中）
+        BigDecimal openFee = BigDecimal.ZERO;
+        if (feeModel != null) {
+            openFee = feeModel.calculateFee(pos.side(), pos.quantity(), pos.entryPrice());
+        }
+        BigDecimal totalTradeFee = openFee.add(closeFee);
 
         Trade trade = new Trade(
                 pos.instrument(),
@@ -83,10 +119,11 @@ public class VirtualAccount {
                 price,
                 pos.entryTime(),
                 timestamp,
-                pnl
+                pnl,
+                totalTradeFee
         );
         trades.add(trade);
-        log.debug("Closed {} @ ${}, PnL: ${}", instrument.symbol(), price, pnl);
+        log.debug("Closed {} @ ${}, PnL: ${}, fee=${}", instrument.symbol(), price, pnl, closeFee);
         return trade;
     }
 
@@ -131,4 +168,5 @@ public class VirtualAccount {
     public Map<String, Position> getPositions() { return Map.copyOf(positions); }
     public List<Trade> getTrades() { return List.copyOf(trades); }
     public boolean hasPosition(Instrument instrument) { return positions.containsKey(instrument.symbol()); }
+    public BigDecimal getTotalFeesPaid() { return totalFeesPaid; }
 }

@@ -56,10 +56,15 @@ public class PerformanceCalculator {
         int maxLoseStreak = 0;
         int currentWinStreak = 0;
         long totalDuration = 0;
+        BigDecimal totalFees = BigDecimal.ZERO;
 
         List<BigDecimal> perTradeReturns = new ArrayList<>();
 
         for (Trade trade : trades) {
+            // 累计手续费
+            if (trade.totalFee() != null) {
+                totalFees = totalFees.add(trade.totalFee());
+            }
             // 交易时长
             totalDuration += (trade.exitTime() - trade.entryTime());
 
@@ -136,7 +141,8 @@ public class PerformanceCalculator {
                 avgWin, avgLoss, profitFactor, maxConsecutiveLosses,
                 initialBalance, finalBalance, startTime, endTime,
                 annualizedReturn, sharpeRatio, sortinoRatio, calmarRatio,
-                avgTradeDuration, maxWinStreak, maxLoseStreak, monthlyReturns
+                avgTradeDuration, maxWinStreak, maxLoseStreak, monthlyReturns,
+                totalFees
         );
     }
 
@@ -290,7 +296,8 @@ public class PerformanceCalculator {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0,
                 initialBalance, initialBalance, startTime, endTime,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                BigDecimal.ZERO, 0, 0, Map.of()
+                BigDecimal.ZERO, 0, 0, Map.of(),
+                BigDecimal.ZERO
         );
     }
 }
