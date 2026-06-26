@@ -9,6 +9,7 @@ import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.LiquidationEvent;
+import com.tj.crypto.strategy.core.SignalCollector;
 import com.tj.crypto.strategy.core.StrategyContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,9 +46,10 @@ class StrategyEngineEventTest {
         executor.initialize();
 
         StrategyContext context = mock(StrategyContext.class);
+        SignalCollector signalCollector = mock(SignalCollector.class);
 
         // 创建策略引擎（不注入真实策略，用空列表替代）
-        strategyEngine = new StrategyEngine(executor, eventBus, context, List.of(), List.of());
+        strategyEngine = new StrategyEngine(executor, eventBus, context, signalCollector, List.of(), List.of());
         strategyEngine.init();
     }
 

@@ -4,6 +4,8 @@ import com.tj.crypto.enums.Indicator;
 import com.tj.crypto.enums.Symbol;
 import com.tj.crypto.event.MarketEventBus;
 import com.tj.crypto.marketdata.model.MarketEvent;
+import com.tj.crypto.strategy.core.SignalCollector;
+import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.Strategy;
 import com.tj.crypto.strategy.core.StrategyContext;
 import jakarta.annotation.PostConstruct;
@@ -33,6 +35,7 @@ public class StrategyEngine {
     private final ThreadPoolTaskExecutor tjTaskExecutor;
     private final MarketEventBus eventBus;
     private final StrategyContext strategyContext;
+    private final SignalCollector signalCollector;
 
     /** 新策略接口 */
     private final List<Strategy> strategies;
@@ -42,11 +45,13 @@ public class StrategyEngine {
     public StrategyEngine(ThreadPoolTaskExecutor tjTaskExecutor,
                           MarketEventBus eventBus,
                           StrategyContext strategyContext,
+                          SignalCollector signalCollector,
                           List<Strategy> strategies,
                           List<BaseStrategy> legacyStrategies) {
         this.tjTaskExecutor = tjTaskExecutor;
         this.eventBus = eventBus;
         this.strategyContext = strategyContext;
+        this.signalCollector = signalCollector;
         this.strategies = strategies;
         this.legacyStrategies = legacyStrategies;
     }
@@ -68,7 +73,10 @@ public class StrategyEngine {
             if (strategy.listenedEvents().contains(event.getClass())) {
                 tjTaskExecutor.execute(() -> {
                     try {
-                        strategy.onEvent(event, strategyContext);
+                        SignalEvent signal = strategy.onEvent(event, strategyContext);
+                        if (signal != null) {
+                            signalCollector.collect(signal);
+                        }
                     } catch (Exception e) {
                         log.error("Strategy {} error: {}", strategy.name(), e.getMessage(), e);
                     }

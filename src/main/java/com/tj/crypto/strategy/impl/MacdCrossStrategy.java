@@ -41,22 +41,23 @@ public class MacdCrossStrategy implements Strategy {
     }
 
     @Override
-    public void onEvent(MarketEvent event, StrategyContext context) {
+    public SignalEvent onEvent(MarketEvent event, StrategyContext context) {
         if (!(event instanceof BarEvent bar) || !bar.closed()) {
-            return; // 只处理已关闭的 K 线
+            return null;
         }
 
         Factor macdFactor = context.getFactor("MACD_HIST", bar.instrument(), bar.timeframe());
         if (macdFactor == null || !macdFactor.isUsable()) {
-            return; // 因子未就绪
+            return null;
         }
 
         BigDecimal currentHistogram = macdFactor.value();
+        SignalEvent signal = null;
 
         if (lastHistogram != null) {
             // 金叉：MACD 从负变正
             if (lastHistogram.compareTo(BigDecimal.ZERO) < 0 && currentHistogram.compareTo(BigDecimal.ZERO) >= 0) {
-                SignalEvent signal = new SignalEvent(
+                signal = new SignalEvent(
                         name(),
                         bar.instrument(),
                         SignalType.BUY,
@@ -69,7 +70,7 @@ public class MacdCrossStrategy implements Strategy {
             }
             // 死叉：MACD 从正变负
             else if (lastHistogram.compareTo(BigDecimal.ZERO) >= 0 && currentHistogram.compareTo(BigDecimal.ZERO) < 0) {
-                SignalEvent signal = new SignalEvent(
+                signal = new SignalEvent(
                         name(),
                         bar.instrument(),
                         SignalType.SELL,
@@ -83,5 +84,6 @@ public class MacdCrossStrategy implements Strategy {
         }
 
         lastHistogram = currentHistogram;
+        return signal;
     }
 }

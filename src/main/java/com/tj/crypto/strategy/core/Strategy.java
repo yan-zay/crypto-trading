@@ -35,8 +35,9 @@ public interface Strategy {
      *
      * @param event   市场事件
      * @param context 策略上下文（可查询因子）
+     * @return 交易信号（无信号时返回 null）
      */
-    void onEvent(MarketEvent event, StrategyContext context);
+    SignalEvent onEvent(MarketEvent event, StrategyContext context);
 
     /**
      * 定时触发（可选）。

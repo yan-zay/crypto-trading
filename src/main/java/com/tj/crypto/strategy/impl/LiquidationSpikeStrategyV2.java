@@ -40,22 +40,23 @@ public class LiquidationSpikeStrategyV2 implements Strategy {
     }
 
     @Override
-    public void onEvent(MarketEvent event, StrategyContext context) {
+    public SignalEvent onEvent(MarketEvent event, StrategyContext context) {
         if (event instanceof LiquidationEvent liq) {
-            processLiquidation(liq);
+            return processLiquidation(liq);
         }
+        return null;
     }
 
-    private void processLiquidation(LiquidationEvent event) {
+    private SignalEvent processLiquidation(LiquidationEvent event) {
         BigDecimal amountUsd = event.quantityUsd();
         if (amountUsd == null || amountUsd.compareTo(thresholdUsd) <= 0) {
-            return;
+            return null;
         }
 
         SignalEvent signal = new SignalEvent(
                 name(),
                 event.instrument(),
-                SignalType.HOLD, // 爆仓信号不直接产生买卖，需结合其他因子
+                SignalType.HOLD,
                 BigDecimal.ONE,
                 String.format("大额爆仓: %s %s $%s",
                         event.instrument().symbol(),
@@ -66,6 +67,7 @@ public class LiquidationSpikeStrategyV2 implements Strategy {
         );
 
         log.warn("[SIGNAL] {}: {} {}", signal.strategyName(), signal.instrument().symbol(), signal.reason());
+        return signal;
     }
 
     /**
