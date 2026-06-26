@@ -8,6 +8,7 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.execution.ExecutionEngine;
+import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.cache.InMemoryBarCache;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
@@ -48,7 +49,7 @@ public class BacktestEngine {
     }
 
     /**
-     * 运行回测。
+     * 运行回测（使用独立的内部 BarCache）。
      */
     public BacktestResult run(BacktestConfig config, Strategy strategy, HistoricalDataProvider dataProvider) {
         log.info("Starting backtest: {} {} [{}, {}] initialBalance=${}",
@@ -111,6 +112,74 @@ public class BacktestEngine {
         if (account.hasPosition(instrument)) {
             account.closePosition(instrument, lastPrice, timestamp);
         }
+    }
+
+    /**
+     * 运行回测（使用外部 BarCache）。
+     * 当 FactorCalculator 需要共享同一 BarCache 时使用此方法。
+     * 外部 BarCache 会自动订阅回测事件总线，确保因子能读到回放的 bar。
+     */
+    public BacktestResult run(BacktestConfig config, Strategy strategy,
+                              HistoricalDataProvider dataProvider, BarCache backtestBarCache) {
+        log.info("Starting backtest with external BarCache: {} {} [{}, {}] initialBalance=${}",
+                config.instrument().symbol(), config.timeframe().getCode(),
+                config.startTime(), config.endTime(), config.initialBalance());
+
+        // 1. 创建独立的事件总线
+        InMemoryEventBus backtestEventBus = new InMemoryEventBus();
+
+        // 2. 外部 BarCache 订阅回测事件总线（构造函数中完成）
+        //    如果 backtestBarCache 是 InMemoryBarCache 且传入新的 eventBus，
+        //    需要确保它订阅了正确的 eventBus。
+        //    这里创建一个新的 InMemoryBarCache，它会在构造函数中订阅 backtestEventBus。
+        InMemoryBarCache barCache = (backtestBarCache instanceof InMemoryBarCache)
+                ? (InMemoryBarCache) backtestBarCache
+                : new InMemoryBarCache(backtestEventBus);
+
+        // 3. 创建回测专用 StrategyContext（带因子计算）
+        StrategyContext backtestContext = new BacktestStrategyContext(barCache, factorCalculators);
+
+        // 4. 创建虚拟账户
+        VirtualAccount account = new VirtualAccount(config.initialBalance());
+
+        // 5. 收集信号
+        List<SignalEvent> signals = new ArrayList<>();
+
+        // 6. 跟踪最后一根 bar 的收盘价
+        AtomicReference<BigDecimal> lastClosePrice = new AtomicReference<>(BigDecimal.ZERO);
+
+        // 7. 订阅 BarEvent
+        backtestEventBus.subscribe(BarEvent.class, bar -> {
+            barCache.addBar(bar);
+            lastClosePrice.set(bar.close());
+
+            if (!bar.closed()) return;
+
+            SignalEvent signal = strategy.onEvent(bar, backtestContext);
+            if (signal != null) {
+                signals.add(signal);
+                executionEngine.execute(signal, account, bar.close(), bar.metadata().exchangeTimestamp());
+            }
+        });
+
+        // 8. 回放历史事件
+        EventReplayer replayer = new EventReplayer(backtestEventBus);
+        int eventCount = replayer.replay(dataProvider, config.instrument(),
+                config.timeframe(), config.startTime(), config.endTime());
+
+        // 9. 使用最后一根 bar 的收盘价平仓
+        closeAllPositions(account, config.instrument(), lastClosePrice.get(), config.endTime());
+
+        // 10. 计算性能报告
+        BigDecimal finalBalance = account.getBalance();
+        PerformanceReport report = performanceCalculator.calculate(
+                account.getTrades(), config.initialBalance(), finalBalance,
+                config.startTime(), config.endTime());
+
+        log.info("Backtest complete: {} events, {} signals, {} trades, {}",
+                eventCount, signals.size(), account.getTrades().size(), report);
+
+        return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
     }
 
     /**
