@@ -25,6 +25,7 @@ id:
 # Coinglass API 配置
 crypto:
   binance:
+    symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
     historical:
       base-url: https://fapi.binance.com
   coinglass:
