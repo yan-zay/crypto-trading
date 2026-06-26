@@ -94,6 +94,12 @@
             <artifactId>ta4j-core</artifactId>
             <version>0.17</version>
         </dependency>
+
+        <!-- 可观测性：Actuator + Metrics -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
