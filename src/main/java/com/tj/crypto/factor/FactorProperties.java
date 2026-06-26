@@ -50,4 +50,10 @@ public class FactorProperties {
 
     /** Bollinger Bands 标准差倍数，默认 2.0 */
     private double bbStdDev = 2.0;
+
+    /** ATR（平均真实波幅）周期，默认 14 */
+    private int atrPeriod = 14;
+
+    /** ADX（平均趋向指数）周期，默认 14 */
+    private int adxPeriod = 14;
 }
