@@ -9,6 +9,7 @@ import com.tj.crypto.marketdata.normalize.BinanceKlineNormalizer;
 import jakarta.websocket.*;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.tyrus.client.ClientManager;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -26,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Slf4j
 @Component
 @ClientEndpoint
+@ConditionalOnProperty(name = "crypto.websocket.client-type", havingValue = "tyrus", matchIfMissing = true)
 public class BinanceWebSocketClient {
 
     public static Session session;

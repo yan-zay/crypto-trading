@@ -30,3 +30,5 @@ crypto:
   websocket:
     baseUrl: wss://fstream.binance.com
     websocketUrl: wss://fstream.binance.com/ws/btcusdt@kline_1m
+    # WebSocket 客户端实现：tyrus（默认） 或 okhttp
+    client-type: ${WS_CLIENT_TYPE:tyrus}

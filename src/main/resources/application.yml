@@ -36,6 +36,8 @@ crypto:
   websocket:
     baseUrl: ${BINANCE_WS_BASE_URL:wss://fstream.binance.com}
     websocketUrl: ${BINANCE_WS_URL:wss://fstream.binance.com/ws/btcusdt@kline_1m}
+    # WebSocket 客户端实现：tyrus（默认） 或 okhttp
+    client-type: ${WS_CLIENT_TYPE:tyrus}
   strategy:
     configs:
       liquidation-spike:
