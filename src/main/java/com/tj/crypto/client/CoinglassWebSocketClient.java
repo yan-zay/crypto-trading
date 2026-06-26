@@ -1,14 +1,16 @@
 package com.tj.crypto.client;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tj.crypto.config.properties.CoinglassProperties;
 import com.tj.crypto.config.properties.WebsocketProperties;
+import com.tj.crypto.event.MarketEventBus;
+import com.tj.crypto.marketdata.model.LiquidationEvent;
+import com.tj.crypto.marketdata.normalize.CoinglassLiquidationNormalizer;
 import com.tj.crypto.pojo.dto.CgResultDTO;
 import com.tj.crypto.pojo.dto.KLineData;
 import com.tj.crypto.pojo.dto.LiquidationOrder;
 import jakarta.websocket.*;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.tyrus.client.ClientManager;
 import org.springframework.stereotype.Component;
@@ -24,13 +26,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
+ * Coinglass WebSocket 客户端。
+ * 连接 Coinglass 爆仓数据流，接收并标准化为 LiquidationEvent。
+ *
  * @Author zay
  * @Date 2025/9/15 17:19
  */
 @Slf4j
 @Component
 @ClientEndpoint
-@AllArgsConstructor
 public class CoinglassWebSocketClient {
 
     public static Session session;
@@ -38,15 +42,38 @@ public class CoinglassWebSocketClient {
 
     private final ClientManager clientManager;
     private final ClientEndpointConfig clientEndpointConfig;
+    private final CoinglassProperties coinglassProperties;
+    private final CoinglassLiquidationNormalizer liquidationNormalizer;
+    private final MarketEventBus eventBus;
 
     private final CountDownLatch connectionLatch = new CountDownLatch(1);
     private final AtomicReference<String> lastMessage = new AtomicReference<>();
     private WebsocketProperties websocketProperties;
 
+    public CoinglassWebSocketClient(ClientManager clientManager,
+                                     ClientEndpointConfig clientEndpointConfig,
+                                     CoinglassProperties coinglassProperties,
+                                     CoinglassLiquidationNormalizer liquidationNormalizer,
+                                     MarketEventBus eventBus,
+                                     WebsocketProperties websocketProperties) {
+        this.clientManager = clientManager;
+        this.clientEndpointConfig = clientEndpointConfig;
+        this.coinglassProperties = coinglassProperties;
+        this.liquidationNormalizer = liquidationNormalizer;
+        this.eventBus = eventBus;
+        this.websocketProperties = websocketProperties;
+    }
+
     public void connect() {
         try {
+            String apiKey = coinglassProperties.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                log.error("Coinglass API key not configured. Set COINGLASS_API_KEY environment variable.");
+                return;
+            }
+            String wsUrl = "wss://open-ws.coinglass.com/ws-api?cg-api-key=" + apiKey;
             log.info("Attempting to connect to coinglass WebSocket via proxy...");
-            session = clientManager.connectToServer(this, new URI("wss://open-ws.coinglass.com/ws-api?cg-api-key=REMOVED_SECRET"));
+            session = clientManager.connectToServer(this, new URI(wsUrl));
 
             if (connectionLatch.await(10, TimeUnit.SECONDS)) {
                 log.info("Successfully connected to coinglass WebSocket via proxy");
@@ -95,17 +122,19 @@ public class CoinglassWebSocketClient {
                         continue;
                     }
 
-                    // 处理1分钟维度数据
+                    // 处理1分钟维度数据（保留现有聚合逻辑）
                     updateKLineData(symbolOneMinuteData, symbol, timestamp, volUsd, 60 * 1000);
 
-                    // 处理5分钟维度数据
+                    // 处理5分钟维度数据（保留现有聚合逻辑）
                     updateKLineData(symbolFiveMinuteData, symbol, timestamp, volUsd, 5 * 60 * 1000);
+
+                    // 标准化为 LiquidationEvent 并发布到事件总线
+                    LiquidationEvent event = liquidationNormalizer.normalize(order);
+                    if (event != null) {
+                        eventBus.publish(event);
+                    }
                 }
             }
-            // 在这里添加你的业务逻辑，例如存储到数据库、发送事件等
-            // 可以通过静态applicationContext获取Spring Bean
-            // YourService yourService = applicationContext.getBean(YourService.class);
-            // yourService.processData(...);
         } catch (Exception e) {
             log.error("Error parsing data", e);
         }

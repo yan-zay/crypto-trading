@@ -3,9 +3,10 @@ package com.tj.crypto.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tj.crypto.config.properties.WebsocketProperties;
+import com.tj.crypto.event.MarketEventBus;
+import com.tj.crypto.marketdata.model.BarEvent;
+import com.tj.crypto.marketdata.normalize.BinanceKlineNormalizer;
 import jakarta.websocket.*;
-import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.tyrus.client.ClientManager;
 import org.springframework.stereotype.Component;
@@ -16,13 +17,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
+ * Binance WebSocket 客户端。
+ * 连接 Binance 期货 WebSocket，接收 kline 数据并标准化为 BarEvent。
+ *
  * @Author zay
  * @Date 2025/9/15 17:19
  */
 @Slf4j
 @Component
 @ClientEndpoint
-@AllArgsConstructor
 public class BinanceWebSocketClient {
 
     public static Session session;
@@ -30,10 +33,24 @@ public class BinanceWebSocketClient {
 
     private final ClientManager clientManager;
     private final ClientEndpointConfig clientEndpointConfig;
+    private final BinanceKlineNormalizer klineNormalizer;
+    private final MarketEventBus eventBus;
 
     private final CountDownLatch connectionLatch = new CountDownLatch(1);
     private final AtomicReference<String> lastMessage = new AtomicReference<>();
     private WebsocketProperties websocketProperties;
+
+    public BinanceWebSocketClient(ClientManager clientManager,
+                                   ClientEndpointConfig clientEndpointConfig,
+                                   BinanceKlineNormalizer klineNormalizer,
+                                   MarketEventBus eventBus,
+                                   WebsocketProperties websocketProperties) {
+        this.clientManager = clientManager;
+        this.clientEndpointConfig = clientEndpointConfig;
+        this.klineNormalizer = klineNormalizer;
+        this.eventBus = eventBus;
+        this.websocketProperties = websocketProperties;
+    }
 
     public void connect() {
         try {
@@ -79,22 +96,19 @@ public class BinanceWebSocketClient {
     private void handleKlineData(JsonNode jsonNode) {
         try {
             JsonNode kline = jsonNode.get("k");
-            String symbol = kline.get("s").asText();
-            String interval = kline.get("i").asText();
-            String openPrice = kline.get("o").asText();
-            String highPrice = kline.get("h").asText();
-            String lowPrice = kline.get("l").asText();
-            String closePrice = kline.get("c").asText();
-            String volume = kline.get("v").asText();
-            boolean isClosed = kline.get("x").asBoolean();
+            long eventTime = jsonNode.has("E") ? jsonNode.get("E").asLong() : System.currentTimeMillis();
 
-            log.info("Kline - Symbol: {}, Interval: {}, Open: {}, High: {}, Low: {}, Close: {}, Volume: {}, Closed: {}",
-                    symbol, interval, openPrice, highPrice, lowPrice, closePrice, volume, isClosed);
+            // 标准化为 BarEvent 并发布到事件总线
+            BarEvent barEvent = klineNormalizer.normalize(kline, eventTime);
+            if (barEvent != null) {
+                eventBus.publish(barEvent);
 
-            // 在这里添加你的业务逻辑，例如存储到数据库、发送事件等
-            // 可以通过静态applicationContext获取Spring Bean
-            // YourService yourService = applicationContext.getBean(YourService.class);
-            // yourService.processKlineData(...);
+                log.debug("BarEvent published: {} {} O={} H={} L={} C={} V={} closed={}",
+                        barEvent.instrument().symbol(),
+                        barEvent.timeframe().getCode(),
+                        barEvent.open(), barEvent.high(), barEvent.low(), barEvent.close(),
+                        barEvent.volume(), barEvent.closed());
+            }
 
         } catch (Exception e) {
             log.error("Error parsing kline data", e);

@@ -12,24 +12,23 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://127.0.0.1:3306/id_generator?useUnicode=true&characterEncoding=UTF-8
-    username: 111
-    password: 111
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
 
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: true # 虽然默认为 true ，但是还是显示去指定下。
-
-#  redis:
-#    host: localhost
-#    port: 6379
-#    password: 123456
-#    database: 1
-#    timeout: 5000
-#
-#  redisson:
-#    lock:
-#      wait-time: 30
-#      lease-time: 120
+    map-underscore-to-camel-case: true
 
 id:
   length: 9
+
+# Coinglass API 配置
+crypto:
+  coinglass:
+    api-key: ${COINGLASS_API_KEY:}
+  proxy:
+    host: ${PROXY_HOST:127.0.0.1}
+    port: ${PROXY_PORT:10808}
+  websocket:
+    baseUrl: ${BINANCE_WS_BASE_URL:wss://fstream.binance.com}
+    websocketUrl: ${BINANCE_WS_URL:wss://fstream.binance.com/ws/btcusdt@kline_1m}
