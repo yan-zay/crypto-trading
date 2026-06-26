@@ -24,6 +24,11 @@ public interface SignalCollector {
     List<SignalEvent> getSignals(String strategyName, long from, long to);
 
     /**
+     * 获取所有信号。
+     */
+    List<SignalEvent> getAllSignals();
+
+    /**
      * 清空所有信号（回测前重置）。
      */
     void clear();

@@ -45,7 +45,7 @@ public class SystemMetrics {
     public void reportMetrics() {
         long bars = barEventCount.getAndSet(0);
         log.info("[METRICS] BarEvents/min: {}, Total signals: {}",
-                bars, signalCollector.getSignals("*").size());
+                bars, signalCollector.getAllSignals().size());
     }
 
     public long getBarEventCount() { return barEventCount.get(); }

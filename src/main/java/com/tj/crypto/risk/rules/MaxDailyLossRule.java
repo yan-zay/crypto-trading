@@ -6,7 +6,6 @@ import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskRule;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -17,7 +16,6 @@ import java.math.RoundingMode;
  * 当日已实现亏损不能超过账户初始余额的指定百分比。
  */
 @Component
-@AllArgsConstructor
 public class MaxDailyLossRule implements RiskRule {
 
     /** 最大每日亏损占比（%），默认 5% */

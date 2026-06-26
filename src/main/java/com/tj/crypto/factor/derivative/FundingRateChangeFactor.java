@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,7 +30,7 @@ public class FundingRateChangeFactor implements FactorCalculator {
 
     private final MarketEventBus eventBus;
     private final ConcurrentHashMap<String, List<BigDecimal>> rateHistory = new ConcurrentHashMap<>();
-    private static final int HISTORY_SIZE = 24; // 保留最近 24 次（约 8 小时，每 8 小时一次）
+    private static final int HISTORY_SIZE = 24;
 
     public FundingRateChangeFactor(MarketEventBus eventBus) {
         this.eventBus = eventBus;
@@ -43,10 +44,12 @@ public class FundingRateChangeFactor implements FactorCalculator {
     private void onFundingRate(FundingRateEvent event) {
         String key = event.instrument().symbol();
         rateHistory.compute(key, (k, v) -> {
-            List<BigDecimal> list = v != null ? v : new ArrayList<>();
-            list.add(event.fundingRate());
-            while (list.size() > HISTORY_SIZE) {
-                list.remove(0);
+            List<BigDecimal> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
+            synchronized (list) {
+                list.add(event.fundingRate());
+                while (list.size() > HISTORY_SIZE) {
+                    list.remove(0);
+                }
             }
             return list;
         });
@@ -60,14 +63,12 @@ public class FundingRateChangeFactor implements FactorCalculator {
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         List<BigDecimal> rates = rateHistory.get(instrument.symbol());
-        if (rates == null || rates.size() < 2) {
-            return Factor.warmup(name());
+        if (rates == null) return Factor.warmup(name());
+        synchronized (rates) {
+            if (rates.size() < 2) return Factor.warmup(name());
+            BigDecimal latest = rates.get(rates.size() - 1);
+            BigDecimal previous = rates.get(rates.size() - 2);
+            return Factor.of(name(), latest.subtract(previous), System.currentTimeMillis());
         }
-
-        BigDecimal latest = rates.get(rates.size() - 1);
-        BigDecimal previous = rates.get(rates.size() - 2);
-        BigDecimal change = latest.subtract(previous);
-
-        return Factor.of(name(), change, System.currentTimeMillis());
     }
 }

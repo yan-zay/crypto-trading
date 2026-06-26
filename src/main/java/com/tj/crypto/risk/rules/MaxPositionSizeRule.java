@@ -5,7 +5,6 @@ import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskRule;
-import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -16,7 +15,6 @@ import java.math.RoundingMode;
  * 单个持仓金额不能超过账户余额的指定百分比。
  */
 @Component
-@AllArgsConstructor
 public class MaxPositionSizeRule implements RiskRule {
 
     /** 最大持仓占比（%），默认 30% */

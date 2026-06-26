@@ -9,6 +9,7 @@ import com.tj.crypto.marketdata.model.BarEvent;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
+import org.ta4j.core.indicators.EMAIndicator;
 import org.ta4j.core.indicators.MACDIndicator;
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator;
 
@@ -22,16 +23,17 @@ import java.util.List;
  * MACD 金叉：histogram 从负变正 → 买入信号
  * MACD 死叉：histogram 从正变负 → 卖出信号
  */
-@AllArgsConstructor
 @Component
 public class MacdFactor implements FactorCalculator {
 
     private final BarCache barCache;
-
-    /** 快线周期 */
     private final int fastPeriod = 12;
-    /** 慢线周期 */
     private final int slowPeriod = 26;
+    private final int signalPeriod = 9;
+
+    public MacdFactor(BarCache barCache) {
+        this.barCache = barCache;
+    }
 
     @Override
     public String name() {
@@ -40,19 +42,21 @@ public class MacdFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
-        int requiredBars = slowPeriod + 10;
+        int requiredBars = slowPeriod + signalPeriod + 10;
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, requiredBars);
         if (bars.size() < requiredBars) {
             return Factor.warmup(name());
         }
 
         BarSeries series = Ta4jBarSeriesConverter.toBarSeries(bars, instrument.symbol() + "_" + timeframe.getCode());
-        MACDIndicator macd = new MACDIndicator(new ClosePriceIndicator(series), fastPeriod, slowPeriod);
+        ClosePriceIndicator closePrice = new ClosePriceIndicator(series);
+        MACDIndicator macdLine = new MACDIndicator(closePrice, fastPeriod, slowPeriod);
+        EMAIndicator signalLine = new EMAIndicator(macdLine, signalPeriod);
 
         int endIndex = series.getEndIndex();
-        // MACD 柱状图 = MACD 线的值（TA4J 的 MACDIndicator 直接返回 MACD 线）
-        // 信号线需要单独计算，这里先返回 MACD 线值
-        BigDecimal value = BigDecimal.valueOf(macd.getValue(endIndex).doubleValue());
+        // histogram = MACD 线 - 信号线
+        double histogram = macdLine.getValue(endIndex).doubleValue() - signalLine.getValue(endIndex).doubleValue();
+        BigDecimal value = BigDecimal.valueOf(histogram);
         long timestamp = bars.get(bars.size() - 1).metadata().exchangeTimestamp();
 
         return Factor.of(name(), value, timestamp);

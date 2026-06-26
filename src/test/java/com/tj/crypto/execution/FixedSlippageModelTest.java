@@ -16,7 +16,8 @@ class FixedSlippageModelTest {
 
     @BeforeEach
     void setUp() {
-        model = new FixedSlippageModel(10); // 10 bps = 0.1%
+        model = new FixedSlippageModel();
+        model.setSlippageBps(10); // 10 bps = 0.1%
     }
 
     @Test

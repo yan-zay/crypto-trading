@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -42,11 +43,12 @@ public class LiquidationDensityFactor implements FactorCalculator {
     private void onLiquidation(LiquidationEvent event) {
         String key = event.instrument().symbol();
         liqHistory.compute(key, (k, v) -> {
-            List<LiquidationRecord> list = v != null ? v : new ArrayList<>();
-            list.add(new LiquidationRecord(event.metadata().exchangeTimestamp(), event.quantityUsd()));
-            // 清理过期记录
-            long cutoff = System.currentTimeMillis() - WINDOW_MILLIS * 10;
-            list.removeIf(r -> r.timestamp < cutoff);
+            List<LiquidationRecord> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
+            synchronized (list) {
+                list.add(new LiquidationRecord(event.metadata().exchangeTimestamp(), event.quantityUsd()));
+                long cutoff = System.currentTimeMillis() - WINDOW_MILLIS * 10;
+                list.removeIf(r -> r.timestamp < cutoff);
+            }
             return list;
         });
     }
@@ -59,19 +61,17 @@ public class LiquidationDensityFactor implements FactorCalculator {
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         List<LiquidationRecord> records = liqHistory.get(instrument.symbol());
-        if (records == null || records.isEmpty()) {
-            return Factor.warmup(name());
+        if (records == null) return Factor.warmup(name());
+        synchronized (records) {
+            if (records.isEmpty()) return Factor.warmup(name());
+            long now = System.currentTimeMillis();
+            long windowStart = now - WINDOW_MILLIS;
+            BigDecimal totalInWindow = records.stream()
+                    .filter(r -> r.timestamp >= windowStart)
+                    .map(r -> r.amountUsd)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            return Factor.of(name(), totalInWindow, now);
         }
-
-        long now = System.currentTimeMillis();
-        long windowStart = now - WINDOW_MILLIS;
-
-        BigDecimal totalInWindow = records.stream()
-                .filter(r -> r.timestamp >= windowStart)
-                .map(r -> r.amountUsd)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        return Factor.of(name(), totalInWindow, now);
     }
 
     private record LiquidationRecord(long timestamp, BigDecimal amountUsd) {}

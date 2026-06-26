@@ -24,7 +24,8 @@ class MaxLossPerTradeRuleTest {
 
     @BeforeEach
     void setUp() {
-        rule = new MaxLossPerTradeRule(BigDecimal.valueOf(2)); // 2%
+        rule = new MaxLossPerTradeRule();
+        rule.setMaxLossPct(BigDecimal.valueOf(2)); // 2%
         btcUsdt = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
         account = new VirtualAccount(BigDecimal.valueOf(10000));
     }

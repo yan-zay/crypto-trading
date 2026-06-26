@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,10 +44,12 @@ public class OpenInterestChangeFactor implements FactorCalculator {
     private void onOpenInterest(OpenInterestEvent event) {
         String key = event.instrument().symbol();
         oiHistory.compute(key, (k, v) -> {
-            List<BigDecimal> list = v != null ? v : new ArrayList<>();
-            list.add(event.openInterestUsd());
-            while (list.size() > HISTORY_SIZE) {
-                list.remove(0);
+            List<BigDecimal> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
+            synchronized (list) {
+                list.add(event.openInterestUsd());
+                while (list.size() > HISTORY_SIZE) {
+                    list.remove(0);
+                }
             }
             return list;
         });
@@ -60,22 +63,18 @@ public class OpenInterestChangeFactor implements FactorCalculator {
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         List<BigDecimal> history = oiHistory.get(instrument.symbol());
-        if (history == null || history.size() < 2) {
-            return Factor.warmup(name());
+        if (history == null) return Factor.warmup(name());
+        synchronized (history) {
+            if (history.size() < 2) return Factor.warmup(name());
+            BigDecimal latest = history.get(history.size() - 1);
+            BigDecimal previous = history.get(history.size() - 2);
+            if (previous.compareTo(BigDecimal.ZERO) == 0) {
+                return Factor.of(name(), BigDecimal.ZERO, System.currentTimeMillis());
+            }
+            BigDecimal changePct = latest.subtract(previous)
+                    .divide(previous, 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100));
+            return Factor.of(name(), changePct, System.currentTimeMillis());
         }
-
-        BigDecimal latest = history.get(history.size() - 1);
-        BigDecimal previous = history.get(history.size() - 2);
-
-        if (previous.compareTo(BigDecimal.ZERO) == 0) {
-            return Factor.of(name(), BigDecimal.ZERO, System.currentTimeMillis());
-        }
-
-        // 变化率 = (latest - previous) / previous * 100
-        BigDecimal changePct = latest.subtract(previous)
-                .divide(previous, 6, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(100));
-
-        return Factor.of(name(), changePct, System.currentTimeMillis());
     }
 }

@@ -4,12 +4,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 进程内信号收集器实现。
- * 按策略名称分组存储信号。
+ * 按策略名称分组存储信号。线程安全。
  */
 @Slf4j
 @Component
@@ -19,7 +20,8 @@ public class InMemorySignalCollector implements SignalCollector {
 
     @Override
     public void collect(SignalEvent signal) {
-        store.computeIfAbsent(signal.strategyName(), k -> new ArrayList<>())
+        // 使用 synchronizedList 确保并发安全
+        store.computeIfAbsent(signal.strategyName(), k -> Collections.synchronizedList(new ArrayList<>()))
                 .add(new SignalStore(signal));
         log.debug("Signal collected: {} {} {}", signal.strategyName(), signal.type(), signal.reason());
     }
@@ -43,6 +45,17 @@ public class InMemorySignalCollector implements SignalCollector {
                     .filter(s -> s.timestamp() >= from && s.timestamp() <= to)
                     .toList();
         }
+    }
+
+    @Override
+    public List<SignalEvent> getAllSignals() {
+        List<SignalEvent> all = new ArrayList<>();
+        for (List<SignalStore> list : store.values()) {
+            synchronized (list) {
+                list.stream().map(SignalStore::signal).forEach(all::add);
+            }
+        }
+        return all;
     }
 
     @Override

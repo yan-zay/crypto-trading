@@ -134,10 +134,8 @@ class InMemoryEventBusTest {
             eventBus.publish(createBarEvent("BTCUSDT"));
             eventBus.publish(createLiquidationEvent("BTCUSDT"));
 
-            // MarketEvent 是 sealed interface，但 subscribe 按 Class 匹配
-            // BarEvent 和 LiquidationEvent 是不同的 Class，所以 MarketEvent.class 订阅不会收到
-            // 这是设计选择：按精确类型匹配，而非按父类型
-            assertThat(allEvents).isEmpty();
+            // MarketEvent 订阅者应收到所有子类型事件（事件总线向父类型传播）
+            assertThat(allEvents).hasSize(2);
         }
     }
 

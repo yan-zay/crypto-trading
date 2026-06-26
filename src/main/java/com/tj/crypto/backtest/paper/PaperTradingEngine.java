@@ -97,7 +97,7 @@ public class PaperTradingEngine {
 
     private void executeSignal(SignalEvent signal, BigDecimal currentPrice, long timestamp) {
         if (signal.type() == SignalType.BUY && !account.hasPosition(signal.instrument())) {
-            BigDecimal quantity = account.getBalance().divide(currentPrice, 6, BigDecimal.ROUND_HALF_UP);
+            BigDecimal quantity = account.getBalance().divide(currentPrice, 6, java.math.RoundingMode.HALF_UP);
             if (quantity.compareTo(BigDecimal.ZERO) > 0) {
                 account.openPosition(signal.instrument(), OrderSide.LONG, quantity, currentPrice, timestamp);
                 log.info("[PAPER] BUY {} {} @ ${}", quantity, signal.instrument().symbol(), currentPrice);

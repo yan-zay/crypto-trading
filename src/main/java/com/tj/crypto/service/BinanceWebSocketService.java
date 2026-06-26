@@ -1,27 +1,26 @@
 package com.tj.crypto.service;
 
 import com.tj.crypto.client.BinanceWebSocketClient;
-import jakarta.annotation.PostConstruct;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
-import static com.tj.crypto.config.ThreadPoolConfig.THREAD_POOL_NAME;
-
 /**
- * @Author zay
- * @Date 2025/9/12 16:25
+ * Binance WebSocket 生命周期管理。
+ * 当前未启用（@PostConstruct 被注释），保留供后续使用。
  */
 @Slf4j
 @Service
-@AllArgsConstructor
 public class BinanceWebSocketService {
 
     private final BinanceWebSocketClient webSocketClient;
-    private ThreadPoolTaskExecutor tjTaskExecutor;
+    private final ThreadPoolTaskExecutor tjTaskExecutor;
+
+    public BinanceWebSocketService(BinanceWebSocketClient webSocketClient,
+                                    ThreadPoolTaskExecutor tjTaskExecutor) {
+        this.webSocketClient = webSocketClient;
+        this.tjTaskExecutor = tjTaskExecutor;
+    }
 
 /*    @PostConstruct
     public void init() {

@@ -1,8 +1,8 @@
 package com.tj.crypto.service;
 
 import com.tj.crypto.client.CoinglassWebSocketClient;
+import com.tj.crypto.config.properties.CoinglassProperties;
 import jakarta.annotation.PostConstruct;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -12,47 +12,64 @@ import org.springframework.stereotype.Service;
 import static com.tj.crypto.config.ThreadPoolConfig.THREAD_POOL_NAME;
 
 /**
- * @Author zay
- * @Date 2025/9/12 16:25
+ * Coinglass WebSocket 生命周期管理。
+ * 仅在 API key 配置时启动连接。
  */
 @Slf4j
 @Service
-@AllArgsConstructor
 public class CgWebSocketService {
 
     private final CoinglassWebSocketClient webSocketClient;
-    private ThreadPoolTaskExecutor tjTaskExecutor;
+    private final CoinglassProperties coinglassProperties;
+    private final ThreadPoolTaskExecutor tjTaskExecutor;
+    private volatile boolean enabled = false;
+
+    public CgWebSocketService(CoinglassWebSocketClient webSocketClient,
+                              CoinglassProperties coinglassProperties,
+                              ThreadPoolTaskExecutor tjTaskExecutor) {
+        this.webSocketClient = webSocketClient;
+        this.coinglassProperties = coinglassProperties;
+        this.tjTaskExecutor = tjTaskExecutor;
+    }
 
     @PostConstruct
-    public void init() throws InterruptedException {
-        log.info("Initializing WebSocket service...");
-        tjTaskExecutor.execute(webSocketClient::connect);
-        this.subscribeToSymbol();
+    public void init() {
+        String apiKey = coinglassProperties.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("Coinglass API key not configured, WebSocket service disabled");
+            return;
+        }
+        log.info("Initializing Coinglass WebSocket service...");
+        enabled = true;
+        tjTaskExecutor.execute(() -> {
+            webSocketClient.connect();
+            // 连接成功后延迟订阅
+            try {
+                Thread.sleep(5000);
+                subscribeToSymbol();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
     }
 
     @Async(THREAD_POOL_NAME)
-    @Scheduled(fixedRate = 3000) // 每30秒检查一次连接
+    @Scheduled(fixedRate = 3000)
     public void checkConnection() {
-//        log.info("Checking WebSocket connection...");
+        if (!enabled) return;
         if (!webSocketClient.isConnected()) {
-            log.warn("WebSocket connection is down, attempting to reconnect...");
+            log.warn("Coinglass WebSocket connection is down, attempting to reconnect...");
             webSocketClient.connect();
         }
     }
 
-
-    // 示例：发送订阅消息
-    public void subscribeToSymbol() throws InterruptedException {
-        Thread.sleep(5000);
-/*        while (!webSocketClient.isConnected()) {
-            continue;
-        }*/
+    private void subscribeToSymbol() {
         String subscribeMessage = """
-                    {
-                        "method": "subscribe",
-                        "channels": ["liquidationOrders"]
-                    }
-                    """;
+                {
+                    "method": "subscribe",
+                    "channels": ["liquidationOrders"]
+                }
+                """;
         webSocketClient.sendMessage(subscribeMessage);
     }
 }

@@ -4,22 +4,25 @@ import com.tj.crypto.backtest.data.HistoricalDataProvider;
 import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.backtest.report.PerformanceCalculator;
 import com.tj.crypto.backtest.report.PerformanceReport;
+import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.event.InMemoryEventBus;
-import com.tj.crypto.event.MarketEventBus;
-import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.cache.InMemoryBarCache;
-import com.tj.crypto.factor.core.FactorRegistry;
+import com.tj.crypto.factor.core.Factor;
+import com.tj.crypto.factor.core.FactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
-import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.core.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 回测引擎。
@@ -29,48 +32,50 @@ import java.util.Map;
  * - 回测使用独立的 InMemoryEventBus，不影响全局
  * - 回测同步执行（事件总线同步派发），确保确定性
  * - 复用同一套 Strategy 接口和 MarketEvent 模型
+ * - 使用最后一根 bar 的收盘价平仓（而非 0）
  */
 @Slf4j
 @Component
 public class BacktestEngine {
 
     private final PerformanceCalculator performanceCalculator;
+    private final List<FactorCalculator> factorCalculators;
 
-    public BacktestEngine(PerformanceCalculator performanceCalculator) {
+    public BacktestEngine(PerformanceCalculator performanceCalculator,
+                          List<FactorCalculator> factorCalculators) {
         this.performanceCalculator = performanceCalculator;
+        this.factorCalculators = factorCalculators;
     }
 
     /**
      * 运行回测。
-     *
-     * @param config     回测配置
-     * @param strategy   策略
-     * @param dataProvider 历史数据提供者
-     * @return 回测结果
      */
     public BacktestResult run(BacktestConfig config, Strategy strategy, HistoricalDataProvider dataProvider) {
         log.info("Starting backtest: {} {} [{}, {}] initialBalance=${}",
                 config.instrument().symbol(), config.timeframe().getCode(),
                 config.startTime(), config.endTime(), config.initialBalance());
 
-        // 1. 创建独立的组件（不污染全局）
+        // 1. 创建独立的组件
         InMemoryEventBus backtestEventBus = new InMemoryEventBus();
         InMemoryBarCache backtestBarCache = new InMemoryBarCache(backtestEventBus);
 
-        // 2. 创建回测专用 StrategyContext
-        StrategyContext backtestContext = new BacktestStrategyContext(backtestBarCache);
+        // 2. 创建回测专用 StrategyContext（带因子计算）
+        StrategyContext backtestContext = new BacktestStrategyContext(backtestBarCache, factorCalculators);
 
         // 3. 创建虚拟账户
         VirtualAccount account = new VirtualAccount(config.initialBalance());
 
-        // 4. 收集信号和交易
+        // 4. 收集信号
         List<SignalEvent> signals = new ArrayList<>();
 
-        // 5. 订阅 BarEvent，自动执行交易
+        // 5. 跟踪最后一根 bar 的收盘价
+        AtomicReference<BigDecimal> lastClosePrice = new AtomicReference<>(BigDecimal.ZERO);
+
+        // 6. 订阅 BarEvent
         backtestEventBus.subscribe(BarEvent.class, bar -> {
             backtestBarCache.addBar(bar);
+            lastClosePrice.set(bar.close());
 
-            // 只在 closed bar 时触发策略
             if (!bar.closed()) return;
 
             SignalEvent signal = strategy.onEvent(bar, backtestContext);
@@ -80,15 +85,15 @@ public class BacktestEngine {
             }
         });
 
-        // 6. 回放历史事件
+        // 7. 回放历史事件
         EventReplayer replayer = new EventReplayer(backtestEventBus);
         int eventCount = replayer.replay(dataProvider, config.instrument(),
                 config.timeframe(), config.startTime(), config.endTime());
 
-        // 7. 平仓所有持仓
-        closeAllPositions(account, config.instrument(), config.endTime());
+        // 8. 使用最后一根 bar 的收盘价平仓（而非 0）
+        closeAllPositions(account, config.instrument(), lastClosePrice.get(), config.endTime());
 
-        // 8. 计算性能报告
+        // 9. 计算性能报告
         BigDecimal finalBalance = account.getBalance();
         PerformanceReport report = performanceCalculator.calculate(
                 account.getTrades(), config.initialBalance(), finalBalance,
@@ -103,8 +108,7 @@ public class BacktestEngine {
     private void executeSignal(VirtualAccount account, SignalEvent signal,
                                BigDecimal currentPrice, long timestamp) {
         if (signal.type() == SignalType.BUY && !account.hasPosition(signal.instrument())) {
-            // 简单策略：全仓买入
-            BigDecimal quantity = account.getBalance().divide(currentPrice, 6, BigDecimal.ROUND_HALF_UP);
+            BigDecimal quantity = account.getBalance().divide(currentPrice, 6, RoundingMode.HALF_UP);
             if (quantity.compareTo(BigDecimal.ZERO) > 0) {
                 account.openPosition(signal.instrument(), OrderSide.LONG, quantity, currentPrice, timestamp);
             }
@@ -113,32 +117,46 @@ public class BacktestEngine {
         }
     }
 
-    private void closeAllPositions(VirtualAccount account, com.tj.crypto.common.domain.Instrument instrument, long timestamp) {
+    private void closeAllPositions(VirtualAccount account, Instrument instrument,
+                                   BigDecimal lastPrice, long timestamp) {
         if (account.hasPosition(instrument)) {
-            // 使用最后的价格平仓（简化处理）
-            account.closePosition(instrument, BigDecimal.ZERO, timestamp);
+            account.closePosition(instrument, lastPrice, timestamp);
         }
     }
 
     /**
      * 回测专用 StrategyContext。
-     * 使用回测专用的 BarCache。
+     * 使用回测专用的 BarCache 和 FactorCalculator 列表。
      */
-    private record BacktestStrategyContext(InMemoryBarCache barCache) implements StrategyContext {
+    private record BacktestStrategyContext(
+            InMemoryBarCache barCache,
+            List<FactorCalculator> calculators
+    ) implements StrategyContext {
+
         @Override
-        public com.tj.crypto.factor.core.Factor getFactor(String name,
-                                                            com.tj.crypto.common.domain.Instrument instrument,
-                                                            com.tj.crypto.common.domain.Timeframe timeframe) {
-            // 回测时因子计算需要通过 FactorRegistry，但这里简化处理
-            // 实际应该创建回测专用的 FactorRegistry
+        public Factor getFactor(String name, Instrument instrument, Timeframe timeframe) {
+            for (FactorCalculator calc : calculators) {
+                if (calc.name().equals(name)) {
+                    return calc.calculate(instrument, timeframe);
+                }
+            }
             return null;
         }
 
         @Override
-        public List<com.tj.crypto.factor.core.Factor> getAllFactors(
-                com.tj.crypto.common.domain.Instrument instrument,
-                com.tj.crypto.common.domain.Timeframe timeframe) {
-            return List.of();
+        public List<Factor> getAllFactors(Instrument instrument, Timeframe timeframe) {
+            List<Factor> factors = new ArrayList<>();
+            for (FactorCalculator calc : calculators) {
+                try {
+                    Factor f = calc.calculate(instrument, timeframe);
+                    if (f != null && f.isUsable()) {
+                        factors.add(f);
+                    }
+                } catch (Exception e) {
+                    // 忽略单个因子计算失败
+                }
+            }
+            return factors;
         }
     }
 }

@@ -65,7 +65,7 @@ class VirtualAccountTest {
     @Test
     @DisplayName("空仓平仓应正确计算盈亏")
     void shouldCalculateShortPnL() {
-        // 开空仓：0.1 BTC @ $16000
+        // 开空仓：0.1 BTC @ $16000，冻结 1600
         account.openPosition(btcUsdt, OrderSide.SHORT,
                 BigDecimal.valueOf(0.1), BigDecimal.valueOf(16000), 1000L);
 
@@ -73,6 +73,8 @@ class VirtualAccountTest {
         Trade trade = account.closePosition(btcUsdt, BigDecimal.valueOf(15000), 2000L);
 
         assertThat(trade.realizedPnL()).isEqualByComparingTo(BigDecimal.valueOf(100));
+        // 8400 + 1600(退还成本) + 100(盈利) = 10100
+        assertThat(account.getBalance()).isEqualByComparingTo(BigDecimal.valueOf(10100));
     }
 
     @Test

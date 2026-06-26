@@ -71,8 +71,9 @@ public class VirtualAccount {
         }
 
         BigDecimal pnl = pos.unrealizedPnL(price);
-        BigDecimal proceeds = pos.quantity().multiply(price);
-        balance = balance.add(proceeds);
+        BigDecimal originalCost = pos.quantity().multiply(pos.entryPrice());
+        // 退还原始成本 + 盈亏（多头和空头统一处理）
+        balance = balance.add(originalCost).add(pnl);
 
         Trade trade = new Trade(
                 pos.instrument(),

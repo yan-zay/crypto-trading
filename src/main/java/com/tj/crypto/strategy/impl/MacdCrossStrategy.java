@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * MACD 金叉/死叉策略（示例）。
@@ -28,7 +29,8 @@ import java.util.Set;
 @Component
 public class MacdCrossStrategy implements Strategy {
 
-    private BigDecimal lastHistogram = null;
+    /** 按交易对存储上一次 MACD 柱状图值（避免跨交易对状态污染） */
+    private final Map<String, BigDecimal> lastHistogramMap = new ConcurrentHashMap<>();
 
     @Override
     public String name() {
@@ -52,38 +54,29 @@ public class MacdCrossStrategy implements Strategy {
         }
 
         BigDecimal currentHistogram = macdFactor.value();
+        String key = bar.instrument().symbol();
+        BigDecimal lastHistogram = lastHistogramMap.get(key);
         SignalEvent signal = null;
 
         if (lastHistogram != null) {
-            // 金叉：MACD 从负变正
             if (lastHistogram.compareTo(BigDecimal.ZERO) < 0 && currentHistogram.compareTo(BigDecimal.ZERO) >= 0) {
-                signal = new SignalEvent(
-                        name(),
-                        bar.instrument(),
-                        SignalType.BUY,
+                signal = new SignalEvent(name(), bar.instrument(), SignalType.BUY,
                         BigDecimal.valueOf(0.7),
                         String.format("MACD 金叉: hist %.4f → %.4f", lastHistogram, currentHistogram),
                         Map.of("MACD_HIST", currentHistogram),
-                        bar.metadata().exchangeTimestamp()
-                );
+                        bar.metadata().exchangeTimestamp());
                 log.info("[SIGNAL] {}: {}", signal.strategyName(), signal.reason());
-            }
-            // 死叉：MACD 从正变负
-            else if (lastHistogram.compareTo(BigDecimal.ZERO) >= 0 && currentHistogram.compareTo(BigDecimal.ZERO) < 0) {
-                signal = new SignalEvent(
-                        name(),
-                        bar.instrument(),
-                        SignalType.SELL,
+            } else if (lastHistogram.compareTo(BigDecimal.ZERO) >= 0 && currentHistogram.compareTo(BigDecimal.ZERO) < 0) {
+                signal = new SignalEvent(name(), bar.instrument(), SignalType.SELL,
                         BigDecimal.valueOf(0.7),
                         String.format("MACD 死叉: hist %.4f → %.4f", lastHistogram, currentHistogram),
                         Map.of("MACD_HIST", currentHistogram),
-                        bar.metadata().exchangeTimestamp()
-                );
+                        bar.metadata().exchangeTimestamp());
                 log.info("[SIGNAL] {}: {}", signal.strategyName(), signal.reason());
             }
         }
 
-        lastHistogram = currentHistogram;
+        lastHistogramMap.put(key, currentHistogram);
         return signal;
     }
 }
