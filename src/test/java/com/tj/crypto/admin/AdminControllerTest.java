@@ -7,8 +7,12 @@ import com.tj.crypto.admin.dto.SystemStatusDTO;
 import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
+import com.tj.crypto.marketdata.model.BarEvent;
+import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalType;
+import com.tj.crypto.strategy.core.Strategy;
+import com.tj.crypto.strategy.core.StrategyManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,23 +23,27 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class AdminControllerTest {
 
     private MockMvc mockMvc;
     private AdminService adminService;
+    private StrategyManager strategyManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         adminService = mock(AdminService.class);
-        AdminController controller = new AdminController(adminService);
+        strategyManager = mock(StrategyManager.class);
+        AdminController controller = new AdminController(adminService, strategyManager);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -193,5 +201,78 @@ class AdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DOWN"))
                 .andExpect(jsonPath("$.connectors").isEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/strategies/{name}/enable 启用已存在的策略")
+    void shouldEnableStrategy() throws Exception {
+        when(strategyManager.enableStrategy("MacdCross")).thenReturn(true);
+
+        mockMvc.perform(post("/api/admin/strategies/MacdCross/enable"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.strategy").value("MacdCross"))
+                .andExpect(jsonPath("$.enabled").value(true));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/strategies/{name}/enable 不存在的策略返回 400")
+    void shouldReturnBadRequestForUnknownStrategyEnable() throws Exception {
+        when(strategyManager.enableStrategy("Unknown")).thenReturn(false);
+
+        mockMvc.perform(post("/api/admin/strategies/Unknown/enable"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Unknown strategy: Unknown"));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/strategies/{name}/disable 禁用已存在的策略")
+    void shouldDisableStrategy() throws Exception {
+        when(strategyManager.disableStrategy("MacdCross")).thenReturn(true);
+
+        mockMvc.perform(post("/api/admin/strategies/MacdCross/disable"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.strategy").value("MacdCross"))
+                .andExpect(jsonPath("$.enabled").value(false));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/strategies/{name}/disable 不存在的策略返回 400")
+    void shouldReturnBadRequestForUnknownStrategyDisable() throws Exception {
+        when(strategyManager.disableStrategy("Unknown")).thenReturn(false);
+
+        mockMvc.perform(post("/api/admin/strategies/Unknown/disable"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Unknown strategy: Unknown"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/strategies/{name}/status 返回策略状态")
+    void shouldReturnStrategyStatus() throws Exception {
+        Strategy strategy = mock(Strategy.class);
+        when(strategy.name()).thenReturn("MacdCross");
+        when(strategy.listenedEvents()).thenReturn(Set.of(BarEvent.class));
+        when(strategyManager.getStrategy("MacdCross")).thenReturn(Optional.of(strategy));
+        when(strategyManager.isStrategyEnabled("MacdCross")).thenReturn(true);
+
+        mockMvc.perform(get("/api/admin/strategies/MacdCross/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("MacdCross"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.listenedEvents[0]").value("BarEvent"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/strategies/{name}/status 不存在的策略返回 400")
+    void shouldReturnBadRequestForUnknownStrategyStatus() throws Exception {
+        when(strategyManager.getStrategy("Unknown")).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/admin/strategies/Unknown/status"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("Unknown strategy: Unknown"));
     }
 }

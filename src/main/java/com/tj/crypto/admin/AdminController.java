@@ -4,9 +4,12 @@ import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
 import com.tj.crypto.strategy.core.SignalEvent;
+import com.tj.crypto.strategy.core.StrategyManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +27,7 @@ import java.util.Map;
 public class AdminController {
 
     private final AdminService adminService;
+    private final StrategyManager strategyManager;
 
     /**
      * 系统状态。
@@ -77,5 +81,70 @@ public class AdminController {
                 "factorCount", status.getFactorCount(),
                 "totalSignalCount", status.getTotalSignalCount()
         ));
+    }
+
+    /**
+     * 启用策略。
+     * 启用后策略将开始接收并处理市场事件。
+     *
+     * @param name 策略名称
+     */
+    @PostMapping("/strategies/{name}/enable")
+    public ResponseEntity<Map<String, Object>> enableStrategy(@PathVariable String name) {
+        boolean success = strategyManager.enableStrategy(name);
+        if (!success) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Unknown strategy: " + name
+            ));
+        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "strategy", name,
+                "enabled", true
+        ));
+    }
+
+    /**
+     * 禁用策略。
+     * 禁用后策略将停止接收市场事件。
+     *
+     * @param name 策略名称
+     */
+    @PostMapping("/strategies/{name}/disable")
+    public ResponseEntity<Map<String, Object>> disableStrategy(@PathVariable String name) {
+        boolean success = strategyManager.disableStrategy(name);
+        if (!success) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Unknown strategy: " + name
+            ));
+        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "strategy", name,
+                "enabled", false
+        ));
+    }
+
+    /**
+     * 查询策略状态。
+     *
+     * @param name 策略名称
+     */
+    @GetMapping("/strategies/{name}/status")
+    public ResponseEntity<Map<String, Object>> getStrategyStatus(@PathVariable String name) {
+        return strategyManager.getStrategy(name)
+                .map(s -> ResponseEntity.ok(Map.<String, Object>of(
+                        "name", s.name(),
+                        "enabled", strategyManager.isStrategyEnabled(name),
+                        "listenedEvents", s.listenedEvents().stream()
+                                .map(Class::getSimpleName)
+                                .toList()
+                )))
+                .orElse(ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "error", "Unknown strategy: " + name
+                )));
     }
 }

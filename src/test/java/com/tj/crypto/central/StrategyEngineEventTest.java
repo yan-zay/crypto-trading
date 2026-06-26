@@ -11,6 +11,7 @@ import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.strategy.core.SignalCollector;
 import com.tj.crypto.strategy.core.StrategyContext;
+import com.tj.crypto.strategy.core.StrategyManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * StrategyEngine 事件分发集成测试。
@@ -47,9 +49,11 @@ class StrategyEngineEventTest {
 
         StrategyContext context = mock(StrategyContext.class);
         SignalCollector signalCollector = mock(SignalCollector.class);
+        StrategyManager strategyManager = mock(StrategyManager.class);
+        when(strategyManager.getActiveStrategies()).thenReturn(List.of());
 
-        // 创建策略引擎（不注入真实策略，用空列表替代）
-        strategyEngine = new StrategyEngine(executor, eventBus, context, signalCollector, List.of());
+        // 创建策略引擎（不注入真实策略，用 mock 的 StrategyManager 替代）
+        strategyEngine = new StrategyEngine(executor, eventBus, context, signalCollector, strategyManager);
         strategyEngine.init();
     }
 

@@ -12,8 +12,10 @@ import com.tj.crypto.strategy.core.InMemorySignalCollector;
 import com.tj.crypto.strategy.core.SignalCollector;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.StrategyContext;
+import com.tj.crypto.strategy.core.StrategyManager;
 import com.tj.crypto.strategy.impl.LiquidationSpikeStrategyV2;
 import com.tj.crypto.central.StrategyEngine;
+import com.tj.crypto.strategy.config.StrategyProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,9 +64,13 @@ class DataPipelineTest {
         LiquidationSpikeStrategyV2 strategy = new LiquidationSpikeStrategyV2();
         strategy.setThresholdUsd(new BigDecimal("1000000"));
 
-        // 创建策略引擎，注入真实策略和信号收集器
+        // 创建 StrategyManager，注入真实策略
+        StrategyProperties properties = new StrategyProperties();
+        StrategyManager strategyManager = new StrategyManager(List.of(strategy), properties);
+
+        // 创建策略引擎，注入 StrategyManager 和信号收集器
         strategyEngine = new StrategyEngine(
-                executor, eventBus, context, signalCollector, List.of(strategy));
+                executor, eventBus, context, signalCollector, strategyManager);
         strategyEngine.init();
     }
 
@@ -201,9 +207,12 @@ class DataPipelineTest {
         LiquidationSpikeStrategyV2 normalStrategy = new LiquidationSpikeStrategyV2();
         normalStrategy.setThresholdUsd(new BigDecimal("1000000"));
 
+        StrategyProperties localProperties = new StrategyProperties();
+        StrategyManager localManager = new StrategyManager(
+                List.of(failingStrategy, normalStrategy), localProperties);
+
         StrategyEngine localEngine = new StrategyEngine(
-                localExecutor, localEventBus, context, localCollector,
-                List.of(failingStrategy, normalStrategy));
+                localExecutor, localEventBus, context, localCollector, localManager);
         localEngine.init();
 
         LiquidationEvent event = createLiquidationEvent(

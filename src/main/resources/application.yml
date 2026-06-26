@@ -40,11 +40,23 @@ crypto:
     client-type: ${WS_CLIENT_TYPE:tyrus}
   strategy:
     configs:
-      liquidation-spike:
+      LiquidationSpike:
         enabled: true
         threshold-usd: 1000000
         symbols: [BTCUSDT, ETHUSDT]
-      macd-cross:
+      MacdCross:
+        enabled: true
+        symbols: [BTCUSDT, ETHUSDT]
+      RsiCross:
+        enabled: true
+        symbols: [BTCUSDT, ETHUSDT]
+      BollingerBreakout:
+        enabled: true
+        symbols: [BTCUSDT, ETHUSDT]
+      SuperTrend:
+        enabled: true
+        symbols: [BTCUSDT, ETHUSDT]
+      AtrTrailingStop:
         enabled: true
         symbols: [BTCUSDT, ETHUSDT]
   risk:
