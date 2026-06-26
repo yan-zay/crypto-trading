@@ -17,35 +17,35 @@ public final class BarEventConverter {
      * BarEvent → BarEventDO。
      */
     public static BarEventDO toDO(BarEvent event) {
-        BarEventDO DO = new BarEventDO();
-        DO.setExchange(event.instrument().exchange().getCode());
-        DO.setMarketType(event.instrument().marketType().getCode());
-        DO.setSymbol(event.instrument().symbol());
-        DO.setTimeframe(event.timeframe().getCode());
-        DO.setOpenTime(event.metadata().exchangeTimestamp());
-        DO.setOpenPrice(event.open());
-        DO.setHighPrice(event.high());
-        DO.setLowPrice(event.low());
-        DO.setClosePrice(event.close());
-        DO.setVolume(event.volume());
-        DO.setQuoteVolume(event.quoteVolume());
-        return DO;
+        BarEventDO dobj = new BarEventDO();
+        dobj.setExchange(event.instrument().exchange().getCode());
+        dobj.setMarketType(event.instrument().marketType().getCode());
+        dobj.setSymbol(event.instrument().symbol());
+        dobj.setTimeframe(event.timeframe().getCode());
+        dobj.setOpenTime(event.metadata().exchangeTimestamp());
+        dobj.setOpenPrice(event.open());
+        dobj.setHighPrice(event.high());
+        dobj.setLowPrice(event.low());
+        dobj.setClosePrice(event.close());
+        dobj.setVolume(event.volume());
+        dobj.setQuoteVolume(event.quoteVolume());
+        return dobj;
     }
 
     /**
      * BarEventDO → BarEvent。
      */
-    public static BarEvent toEvent(BarEventDO DO) {
-        Exchange exchange = Exchange.valueOf(DO.getExchange().toUpperCase());
-        MarketType marketType = MarketType.valueOf(DO.getMarketType().toUpperCase());
+    public static BarEvent toEvent(BarEventDO dobj) {
+        Exchange exchange = Exchange.valueOf(dobj.getExchange().toUpperCase());
+        MarketType marketType = MarketType.valueOf(dobj.getMarketType().toUpperCase());
         com.tj.crypto.common.domain.Instrument instrument =
-                com.tj.crypto.common.domain.Instrument.of(exchange, marketType, DO.getSymbol());
-        Timeframe timeframe = Timeframe.fromCode(DO.getTimeframe());
+                com.tj.crypto.common.domain.Instrument.of(exchange, marketType, dobj.getSymbol());
+        Timeframe timeframe = Timeframe.fromCode(dobj.getTimeframe());
         com.tj.crypto.marketdata.model.EventMetadata metadata =
-                com.tj.crypto.marketdata.model.EventMetadata.of(exchange, DO.getOpenTime());
+                com.tj.crypto.marketdata.model.EventMetadata.of(exchange, dobj.getOpenTime());
 
         return new BarEvent(instrument, metadata, timeframe,
-                DO.getOpenPrice(), DO.getHighPrice(), DO.getLowPrice(), DO.getClosePrice(),
-                DO.getVolume(), DO.getQuoteVolume(), true);
+                dobj.getOpenPrice(), dobj.getHighPrice(), dobj.getLowPrice(), dobj.getClosePrice(),
+                dobj.getVolume(), dobj.getQuoteVolume(), true);
     }
 }

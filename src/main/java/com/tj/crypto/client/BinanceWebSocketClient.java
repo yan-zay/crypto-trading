@@ -32,7 +32,6 @@ public class BinanceWebSocketClient {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ClientManager clientManager;
-    private final ClientEndpointConfig clientEndpointConfig;
     private final BinanceKlineNormalizer klineNormalizer;
     private final MarketEventBus eventBus;
 
@@ -41,12 +40,10 @@ public class BinanceWebSocketClient {
     private WebsocketProperties websocketProperties;
 
     public BinanceWebSocketClient(ClientManager clientManager,
-                                   ClientEndpointConfig clientEndpointConfig,
                                    BinanceKlineNormalizer klineNormalizer,
                                    MarketEventBus eventBus,
                                    WebsocketProperties websocketProperties) {
         this.clientManager = clientManager;
-        this.clientEndpointConfig = clientEndpointConfig;
         this.klineNormalizer = klineNormalizer;
         this.eventBus = eventBus;
         this.websocketProperties = websocketProperties;

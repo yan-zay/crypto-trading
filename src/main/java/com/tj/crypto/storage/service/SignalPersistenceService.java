@@ -27,8 +27,8 @@ public class SignalPersistenceService {
     public void persistSignalAsync(SignalEvent event) {
         tjTaskExecutor.execute(() -> {
             try {
-                SignalEventDO DO = SignalEventConverter.toDO(event);
-                signalEventMapper.insert(DO);
+                SignalEventDO dobj = SignalEventConverter.toDO(event);
+                signalEventMapper.insert(dobj);
                 log.debug("Persisted signal: {} {} {}", event.strategyName(), event.type(), event.instrument().symbol());
             } catch (Exception e) {
                 log.error("Failed to persist signal event: {}", e.getMessage(), e);

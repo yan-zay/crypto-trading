@@ -14,16 +14,16 @@ public final class TradeConverter {
      * Trade → TradeRecordDO。
      */
     public static TradeRecordDO toDO(Trade trade) {
-        TradeRecordDO DO = new TradeRecordDO();
-        DO.setExchange(trade.instrument().exchange().getCode());
-        DO.setSymbol(trade.instrument().symbol());
-        DO.setSide(trade.side().name());
-        DO.setQuantity(trade.quantity());
-        DO.setEntryPrice(trade.entryPrice());
-        DO.setExitPrice(trade.exitPrice());
-        DO.setEntryTime(trade.entryTime());
-        DO.setExitTime(trade.exitTime());
-        DO.setRealizedPnl(trade.realizedPnL());
-        return DO;
+        TradeRecordDO dobj = new TradeRecordDO();
+        dobj.setExchange(trade.instrument().exchange().getCode());
+        dobj.setSymbol(trade.instrument().symbol());
+        dobj.setSide(trade.side().name());
+        dobj.setQuantity(trade.quantity());
+        dobj.setEntryPrice(trade.entryPrice());
+        dobj.setExitPrice(trade.exitPrice());
+        dobj.setEntryTime(trade.entryTime());
+        dobj.setExitTime(trade.exitTime());
+        dobj.setRealizedPnl(trade.realizedPnL());
+        return dobj;
     }
 }

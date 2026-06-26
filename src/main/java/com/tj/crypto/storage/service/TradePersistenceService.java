@@ -27,8 +27,8 @@ public class TradePersistenceService {
     public void persistTradeAsync(Trade trade) {
         tjTaskExecutor.execute(() -> {
             try {
-                TradeRecordDO DO = TradeConverter.toDO(trade);
-                tradeRecordMapper.insert(DO);
+                TradeRecordDO dobj = TradeConverter.toDO(trade);
+                tradeRecordMapper.insert(dobj);
                 log.debug("Persisted trade: {} {} PnL={}", trade.instrument().symbol(), trade.side(), trade.realizedPnL());
             } catch (Exception e) {
                 log.error("Failed to persist trade: {}", e.getMessage(), e);

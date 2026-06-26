@@ -34,9 +34,9 @@ public class MarketDataPersistenceService {
     public void persistBarAsync(BarEvent event) {
         tjTaskExecutor.execute(() -> {
             try {
-                BarEventDO DO = BarEventConverter.toDO(event);
+                BarEventDO dobj = BarEventConverter.toDO(event);
                 synchronized (buffer) {
-                    buffer.add(DO);
+                    buffer.add(dobj);
                     if (buffer.size() >= BATCH_SIZE) {
                         flushBuffer();
                     }

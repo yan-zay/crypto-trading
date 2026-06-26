@@ -3,7 +3,6 @@ package com.tj.crypto.factor.cache;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.marketdata.model.BarEvent;
-import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.event.MarketEventBus;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;

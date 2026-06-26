@@ -22,25 +22,25 @@ public final class SignalEventConverter {
      * SignalEvent → SignalEventDO。
      */
     public static SignalEventDO toDO(SignalEvent event) {
-        SignalEventDO DO = new SignalEventDO();
-        DO.setStrategyName(event.strategyName());
-        DO.setExchange(event.instrument().exchange().getCode());
-        DO.setSymbol(event.instrument().symbol());
-        DO.setSignalType(event.type().getCode());
-        DO.setConfidence(event.confidence());
-        DO.setReason(event.reason());
-        DO.setSignalTime(event.timestamp());
+        SignalEventDO dobj = new SignalEventDO();
+        dobj.setStrategyName(event.strategyName());
+        dobj.setExchange(event.instrument().exchange().getCode());
+        dobj.setSymbol(event.instrument().symbol());
+        dobj.setSignalType(event.type().getCode());
+        dobj.setConfidence(event.confidence());
+        dobj.setReason(event.reason());
+        dobj.setSignalTime(event.timestamp());
 
         // 序列化 factorSnapshot 为 JSON
         if (event.factorSnapshot() != null && !event.factorSnapshot().isEmpty()) {
             try {
-                DO.setFactorSnapshot(objectMapper.writeValueAsString(event.factorSnapshot()));
+                dobj.setFactorSnapshot(objectMapper.writeValueAsString(event.factorSnapshot()));
             } catch (JsonProcessingException e) {
                 log.warn("Failed to serialize factorSnapshot: {}", e.getMessage());
-                DO.setFactorSnapshot("{}");
+                dobj.setFactorSnapshot("{}");
             }
         }
 
-        return DO;
+        return dobj;
     }
 }

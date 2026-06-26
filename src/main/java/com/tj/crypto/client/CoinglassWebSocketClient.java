@@ -41,7 +41,6 @@ public class CoinglassWebSocketClient {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final ClientManager clientManager;
-    private final ClientEndpointConfig clientEndpointConfig;
     private final CoinglassProperties coinglassProperties;
     private final CoinglassLiquidationNormalizer liquidationNormalizer;
     private final MarketEventBus eventBus;
@@ -51,13 +50,11 @@ public class CoinglassWebSocketClient {
     private WebsocketProperties websocketProperties;
 
     public CoinglassWebSocketClient(ClientManager clientManager,
-                                     ClientEndpointConfig clientEndpointConfig,
                                      CoinglassProperties coinglassProperties,
                                      CoinglassLiquidationNormalizer liquidationNormalizer,
                                      MarketEventBus eventBus,
                                      WebsocketProperties websocketProperties) {
         this.clientManager = clientManager;
-        this.clientEndpointConfig = clientEndpointConfig;
         this.coinglassProperties = coinglassProperties;
         this.liquidationNormalizer = liquidationNormalizer;
         this.eventBus = eventBus;

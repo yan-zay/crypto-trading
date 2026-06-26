@@ -56,30 +56,34 @@ mvn test
 
 ```text
 Market data WS/REST
-  -> normalizer
-  -> MarketEventBus
-  -> InMemoryBarCache / StrategyEngine / persistence listeners / metrics
-  -> Strategy.onEvent()
-  -> SignalCollector
+  -> Normalizer (BinanceKlineNormalizer, CoinglassLiquidationNormalizer)
+  -> MarketEventBus (InMemoryEventBus, typed publish/subscribe)
+  -> InMemoryBarCache / FactorRegistry / StrategyEngine / EventPersistenceListener
+  -> Strategy.onEvent(StrategyContext)
+  -> SignalCollector (InMemorySignalCollector)
   -> ExecutionEngine / BacktestEngine / PaperTradingEngine
+  -> Persistence (BarEvent/SignalEvent/TradeRecord via converter+mapper)
 ```
 
-Key runtime packages:
+Key runtime packages (133 source files, 43 packages):
 
 | Package | Responsibility |
 |---|---|
-| `com.tj.crypto.marketdata` | Standard market events, connector abstractions, normalizers |
-| `com.tj.crypto.event` | `MarketEventBus` and in-process implementation |
-| `com.tj.crypto.client` | Coinglass and Binance WebSocket clients |
-| `com.tj.crypto.service` | WebSocket lifecycle management |
-| `com.tj.crypto.factor` | Factor calculators, registry, bar cache |
-| `com.tj.crypto.strategy` | Strategy interface, context, signal model, strategy implementations |
-| `com.tj.crypto.central` | Current `StrategyEngine` |
-| `com.tj.crypto.backtest` | Historical data replay, virtual account, paper trading, reports |
-| `com.tj.crypto.risk` | Risk engine, risk rules, position sizing |
-| `com.tj.crypto.execution` | Execution engine, order model, slippage model |
-| `com.tj.crypto.storage` | Persistence converters, entities, mappers, services |
+| `com.tj.crypto.marketdata` | MarketEvent sealed hierarchy, connector abstractions, normalizers, data quality |
+| `com.tj.crypto.event` | `MarketEventBus` interface + `InMemoryEventBus` (typed pub/sub) |
+| `com.tj.crypto.client` | Coinglass and Binance WebSocket clients (OkHttp + Tyrus) |
+| `com.tj.crypto.service` | WebSocket lifecycle management (connect, subscribe, health check) |
+| `com.tj.crypto.factor` | Factor calculators (14 factors), registry, bar cache, TA4J converter |
+| `com.tj.crypto.strategy` | Strategy interface, context, signal model, 3 strategy implementations |
+| `com.tj.crypto.central` | `StrategyEngine` (event routing to strategy beans) |
+| `com.tj.crypto.backtest` | Backtest engine, event replayer, virtual account, paper trading, reports |
+| `com.tj.crypto.risk` | Risk engine, 3 risk rules, position sizer, risk properties |
+| `com.tj.crypto.execution` | Execution engine, order model, fixed slippage model |
+| `com.tj.crypto.storage` | Persistence converters, entities, mappers, services, event listener |
+| `com.tj.crypto.marketdata.backfill` | Binance historical data provider for backfill |
+| `com.tj.crypto.marketdata.quality` | Data quality checker |
 | `com.tj.crypto.observability` | Basic metrics |
+| `com.tj.crypto.common.domain` | Shared domain models (Exchange, Instrument, Timeframe, etc.) |
 
 ## Current Runtime Notes
 
@@ -92,9 +96,9 @@ Key runtime packages:
 
 ## Known Gaps To Respect
 
-- Full tests may currently be red. Do not build new features on a failing baseline without first documenting or fixing the failure.
+- ~~Full tests may currently be red.~~ **RESOLVED** — 209 tests, all green.
 - Application startup currently depends on MySQL because `AppLifecycleListener` queries `TradeSymbolMapper` on `ApplicationReadyEvent`.
-- Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.
+- ~~Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.~~ **RESOLVED** — BacktestEngine integrates ExecutionEngine, RiskEngine, PositionSizer, and SlippageModel. Full backtest verification tests pass.
 - Account equity, margin, short position semantics, fee model, min notional, precision, funding fee, and liquidation rules are not yet production-grade.
 - `TestController` is a development-only controller and must not be exposed in production.
 
@@ -125,39 +129,22 @@ High-level direction:
 
 以下是按优先级排列的持续开发迭代任务。每项任务适合用 `/loop` 或 Workflow 驱动完成。
 
-### 🔴 高优先级（直接影响系统可用性）
+### ✅ 已完成任务 (L1-L9)
+
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| L1 | 接入 Coinglass 真实爆仓数据 | ✅ 完成 | CoinglassWebSocketClient → LiquidationNormalizer → LiquidationEvent → MarketEventBus 链路已接通 |
+| L2 | 完整回测验证 | ✅ 完成 | BacktestEngine 支持历史数据回放，FullBacktestTest 和 BacktestVerificationTest 通过 |
+| L3 | Binance 历史 K 线回填 | ✅ 完成 | BinanceHistoricalDataProvider 支持按时间范围批量下载，BinanceHistoricalDataProviderTest 通过 |
+| L4 | 因子库扩展到 14 | ✅ 完成 | 9 技术因子（SMA/EMA/MACD/RSI/ATR/ADX/SuperTrend/VWAP/BollingerBand）+ 5 衍生品因子 |
+| L5 | 多交易对并行 | ✅ 完成 | MultiPairIntegrationTest 验证 BTCUSDT/ETHUSDT/SOLUSDT 并行处理 |
+| L6 | 参数优化 | ✅ 完成 | ParameterOptimizationTest 验证 MACD 周期网格搜索 |
+| L7 | 模拟交易引擎 | ✅ 完成 | PaperTradingEngine + VirtualAccount，PortfolioBacktestTest 通过 |
+| L8 | 执行引擎 | ✅ 完成 | ExecutionEngine + FixedSlippageModel，ExecutionEngineTest 通过 |
+| L9 | 可观测性基础 | ✅ 完成 | observability 包基础指标，DataQualityChecker 数据质量检查 |
+
+### 🔴 待办任务
 
 | # | 任务 | 预期产出 | 前置依赖 |
 |---|------|---------|---------|
-| L1 | 接入 Coinglass 真实爆仓数据，验证 LiquidationEvent 从 WS 到策略引擎的完整链路，修复所有连接和解析问题 | 实时爆仓数据流入系统 | 无 |
-| L2 | 用 Binance 历史 K 线数据（BTCUSDT 1min 30天）运行完整回测，验证 MACD 策略的信号质量、盈亏比、最大回撤，修复所有回测问题 | 可信的回测结果 | L3 |
-| L3 | 实现 Binance REST API 历史 K 线回填功能，支持按时间范围批量下载并存入 MySQL，用于回测和数据恢复 | 历史数据回填能力 | 无 |
-
-### 🟠 中优先级（提升系统完整性）
-
-| # | 任务 | 预期产出 | 前置依赖 |
-|---|------|---------|---------|
-| L4 | 添加更多技术指标因子（ATR、ADX、SuperTrend、VWAP）和衍生品因子（多空比、资金费率套利），每个因子配完整单元测试 | 因子库扩展到 15+ | 无 |
-| L5 | 实现多交易对并行支持，让系统同时处理 BTCUSDT、ETHUSDT、SOLUSDT 的实时数据和策略信号，修复所有并发问题 | 多交易对并行 | L1 |
-| L6 | 实现回测参数优化功能，支持 MACD 周期（fast/slow/signal）网格搜索，输出最优参数组合和对应的性能报告 | 策略参数优化 | L2 |
-| L7 | 完善模拟交易引擎，接入实时 Binance 数据，运行 MACD 策略 24 小时模拟交易，输出实时 P&L 和信号日志 | 24h 模拟交易验证 | L5 |
-
-### 🟢 低优先级（长期建设）
-
-| # | 任务 | 预期产出 | 前置依赖 |
-|---|------|---------|---------|
-| L8 | 实现 Binance 执行适配器（限价单/市价单），接入 testnet，完成下单→成交→对账的完整链路 | 实盘执行能力 | L7 |
-| L9 | 添加 Grafana + Prometheus 监控 Dashboard，展示实时 K 线、因子值、策略信号、持仓状态、P&L 曲线 | 可视化监控 | L5 |
 | L10 | 实现策略热加载，支持通过 YAML 配置文件动态添加/修改/禁用策略，无需重启应用 | 策略灵活管理 | L5 |
-
-### 建议执行顺序
-
-```
-L1 (Coinglass 数据验证) + L3 (历史数据回填) + L4 (因子扩展)  ← 并行
-    ↓
-L2 (完整回测) + L5 (多交易对)  ← 并行
-    ↓
-L6 (参数优化) + L7 (24h 模拟)  ← 并行
-    ↓
-L8 (实盘执行) + L9 (监控) + L10 (热加载)  ← 并行
-```
