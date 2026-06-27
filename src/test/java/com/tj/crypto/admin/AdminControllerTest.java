@@ -1,7 +1,11 @@
 package com.tj.crypto.admin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tj.crypto.admin.application.AdminOverviewService;
+import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
+import com.tj.crypto.admin.dto.OverviewDTO;
+import com.tj.crypto.admin.dto.RiskConfigDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
 import com.tj.crypto.common.domain.Exchange;
@@ -38,6 +42,7 @@ class AdminControllerTest {
 
     private MockMvc mockMvc;
     private AdminService adminService;
+    private AdminOverviewService adminOverviewService;
     private StrategyManager strategyManager;
     private DataCoverageService dataCoverageService;
     private AutoBackfillService autoBackfillService;
@@ -46,11 +51,12 @@ class AdminControllerTest {
     @BeforeEach
     void setUp() {
         adminService = mock(AdminService.class);
+        adminOverviewService = mock(AdminOverviewService.class);
         strategyManager = mock(StrategyManager.class);
         dataCoverageService = mock(DataCoverageService.class);
         autoBackfillService = mock(AutoBackfillService.class);
-        AdminController controller = new AdminController(adminService, strategyManager,
-                dataCoverageService, autoBackfillService);
+        AdminController controller = new AdminController(adminService, adminOverviewService,
+                strategyManager, dataCoverageService, autoBackfillService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -281,5 +287,110 @@ class AdminControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("Unknown strategy: Unknown"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/overview 返回系统总览")
+    void shouldReturnOverview() throws Exception {
+        OverviewDTO overview = OverviewDTO.builder()
+                .startupTimestamp(1700000000000L)
+                .uptimeMs(120000L)
+                .strategyCount(3)
+                .enabledStrategyCount(2)
+                .factorCount(5)
+                .totalSignalCount(10)
+                .connectorCount(2)
+                .connectedConnectorCount(1)
+                .connectors(List.of(
+                        ConnectorStatusDTO.builder()
+                                .name("BinanceConnector")
+                                .connected(true)
+                                .messagesReceived(1000L)
+                                .reconnectCount(0L)
+                                .lastMessageTimestamp(1700000060000L)
+                                .lastError("")
+                                .build(),
+                        ConnectorStatusDTO.builder()
+                                .name("CoinglassConnector")
+                                .connected(false)
+                                .messagesReceived(0L)
+                                .reconnectCount(3L)
+                                .lastMessageTimestamp(0L)
+                                .lastError("Connection refused")
+                                .build()
+                ))
+                .riskConfig(RiskConfigDTO.builder()
+                        .maxLossPerTradePct(BigDecimal.valueOf(2.0))
+                        .maxDailyLossPct(BigDecimal.valueOf(5.0))
+                        .maxSizePct(BigDecimal.valueOf(30.0))
+                        .slippageBps(5)
+                        .build())
+                .build();
+        when(adminOverviewService.getOverview()).thenReturn(overview);
+
+        mockMvc.perform(get("/api/admin/overview"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.startupTimestamp").value(1700000000000L))
+                .andExpect(jsonPath("$.uptimeMs").value(120000))
+                .andExpect(jsonPath("$.strategyCount").value(3))
+                .andExpect(jsonPath("$.enabledStrategyCount").value(2))
+                .andExpect(jsonPath("$.factorCount").value(5))
+                .andExpect(jsonPath("$.totalSignalCount").value(10))
+                .andExpect(jsonPath("$.connectorCount").value(2))
+                .andExpect(jsonPath("$.connectedConnectorCount").value(1))
+                .andExpect(jsonPath("$.connectors.length()").value(2))
+                .andExpect(jsonPath("$.connectors[0].name").value("BinanceConnector"))
+                .andExpect(jsonPath("$.connectors[0].connected").value(true))
+                .andExpect(jsonPath("$.connectors[1].name").value("CoinglassConnector"))
+                .andExpect(jsonPath("$.connectors[1].connected").value(false))
+                .andExpect(jsonPath("$.riskConfig.maxLossPerTradePct").value(2.0))
+                .andExpect(jsonPath("$.riskConfig.maxDailyLossPct").value(5.0))
+                .andExpect(jsonPath("$.riskConfig.maxSizePct").value(30.0))
+                .andExpect(jsonPath("$.riskConfig.slippageBps").value(5));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/connectors 返回连接器状态列表")
+    void shouldReturnConnectorList() throws Exception {
+        when(adminOverviewService.getConnectorStatuses()).thenReturn(List.of(
+                ConnectorStatusDTO.builder()
+                        .name("BinanceConnector")
+                        .connected(true)
+                        .messagesReceived(500L)
+                        .reconnectCount(0L)
+                        .lastMessageTimestamp(1700000060000L)
+                        .lastError("")
+                        .build()
+        ));
+
+        mockMvc.perform(get("/api/admin/connectors"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("BinanceConnector"))
+                .andExpect(jsonPath("$[0].connected").value(true))
+                .andExpect(jsonPath("$[0].messagesReceived").value(500))
+                .andExpect(jsonPath("$[0].reconnectCount").value(0))
+                .andExpect(jsonPath("$[0].lastError").value(""));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/risk/configs 返回风控配置")
+    void shouldReturnRiskConfigs() throws Exception {
+        when(adminOverviewService.getRiskConfig()).thenReturn(RiskConfigDTO.builder()
+                .maxLossPerTradePct(BigDecimal.valueOf(2.0))
+                .maxDailyLossPct(BigDecimal.valueOf(5.0))
+                .maxSizePct(BigDecimal.valueOf(30.0))
+                .slippageBps(5)
+                .build());
+
+        mockMvc.perform(get("/api/admin/risk/configs"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.maxLossPerTradePct").value(2.0))
+                .andExpect(jsonPath("$.maxDailyLossPct").value(5.0))
+                .andExpect(jsonPath("$.maxSizePct").value(30.0))
+                .andExpect(jsonPath("$.slippageBps").value(5));
     }
 }

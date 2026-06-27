@@ -1,6 +1,10 @@
 package com.tj.crypto.admin;
 
+import com.tj.crypto.admin.application.AdminOverviewService;
+import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
+import com.tj.crypto.admin.dto.OverviewDTO;
+import com.tj.crypto.admin.dto.RiskConfigDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
 import com.tj.crypto.storage.service.AutoBackfillService;
@@ -31,6 +35,7 @@ import java.util.Map;
 public class AdminController {
 
     private final AdminService adminService;
+    private final AdminOverviewService adminOverviewService;
     private final StrategyManager strategyManager;
     private final DataCoverageService dataCoverageService;
     private final AutoBackfillService autoBackfillService;
@@ -193,5 +198,32 @@ public class AdminController {
                 "days", days,
                 "barsFilled", filled
         ));
+    }
+
+    /**
+     * 系统总览。
+     * 聚合连接状态、策略数量、因子数量、信号数量、风控状态。
+     */
+    @GetMapping("/overview")
+    public ResponseEntity<OverviewDTO> getOverview() {
+        return ResponseEntity.ok(adminOverviewService.getOverview());
+    }
+
+    /**
+     * 连接器状态列表。
+     * 返回所有数据源连接器的运行状态。
+     */
+    @GetMapping("/connectors")
+    public ResponseEntity<List<ConnectorStatusDTO>> getConnectors() {
+        return ResponseEntity.ok(adminOverviewService.getConnectorStatuses());
+    }
+
+    /**
+     * 风控配置读取。
+     * 返回当前生效的风险控制参数。
+     */
+    @GetMapping("/risk/configs")
+    public ResponseEntity<RiskConfigDTO> getRiskConfigs() {
+        return ResponseEntity.ok(adminOverviewService.getRiskConfig());
     }
 }
