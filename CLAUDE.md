@@ -65,25 +65,30 @@ Market data WS/REST
   -> Persistence (BarEvent/SignalEvent/TradeRecord via converter+mapper)
 ```
 
-Key runtime packages (133 source files, 43 packages):
+Key runtime packages (135 source files, 22 packages):
 
 | Package | Responsibility |
 |---|---|
-| `com.tj.crypto.marketdata` | MarketEvent sealed hierarchy, connector abstractions, normalizers, data quality |
+| `com.tj.crypto.marketdata` | MarketEvent sealed hierarchy, connector abstractions, normalizers, backfill, data quality |
 | `com.tj.crypto.event` | `MarketEventBus` interface + `InMemoryEventBus` (typed pub/sub) |
-| `com.tj.crypto.client` | Coinglass and Binance WebSocket clients (OkHttp + Tyrus) |
-| `com.tj.crypto.service` | WebSocket lifecycle management (connect, subscribe, health check) |
-| `com.tj.crypto.factor` | Factor calculators (14 factors), registry, bar cache, TA4J converter |
-| `com.tj.crypto.strategy` | Strategy interface, context, signal model, 3 strategy implementations |
+| `com.tj.crypto.client` | Coinglass and Binance WebSocket clients (OkHttp + Tyrus, 4 clients) |
+| `com.tj.crypto.service` | WebSocket lifecycle management (connect, subscribe, health check, 4 services) |
+| `com.tj.crypto.factor` | Factor calculators (19 factors: 10 technical + 5 derivative + 4 framework), registry, bar cache, TA4J converter |
+| `com.tj.crypto.strategy` | Strategy interface, context, signal model, StrategyManager (hot-reload), 6 strategy implementations |
 | `com.tj.crypto.central` | `StrategyEngine` (event routing to strategy beans) |
-| `com.tj.crypto.backtest` | Backtest engine, event replayer, virtual account, paper trading, reports |
+| `com.tj.crypto.backtest` | Backtest engine, event replayer, virtual account, paper trading, portfolio backtest, walk-forward optimizer, parameter optimizer, fee model, reports |
 | `com.tj.crypto.risk` | Risk engine, 3 risk rules, position sizer, risk properties |
 | `com.tj.crypto.execution` | Execution engine, order model, fixed slippage model |
-| `com.tj.crypto.storage` | Persistence converters, entities, mappers, services, event listener |
-| `com.tj.crypto.marketdata.backfill` | Binance historical data provider for backfill |
-| `com.tj.crypto.marketdata.quality` | Data quality checker |
-| `com.tj.crypto.observability` | Basic metrics |
-| `com.tj.crypto.common.domain` | Shared domain models (Exchange, Instrument, Timeframe, etc.) |
+| `com.tj.crypto.storage` | Persistence converters (3), entities (3), mappers (3), services (4), event listener |
+| `com.tj.crypto.admin` | AdminController + AdminService, REST API for system status, strategies, factors, signals, health |
+| `com.tj.crypto.config` | Spring configuration: OkHttp proxy, thread pool, WebSocket container, dotenv, properties |
+| `com.tj.crypto.common.domain` | Shared domain models (Exchange, Instrument, Timeframe, OrderSide, ChannelType, MarketType) |
+| `com.tj.crypto.observability` | System metrics (SystemMetrics) |
+| `com.tj.crypto.pojo.dto` | Legacy DTOs (CgResultDTO, KLineData, LiquidationOrder, LiquidationOrderSum) |
+| `com.tj.crypto.entity` | Database entities and base classes (PhysicsTimeBaseDO, TradeSymbolDO) |
+| `com.tj.crypto.mapper` | MyBatis-Plus Mappers (BaseMapperX, TradeSymbolMapper) |
+| `com.tj.crypto.listener` | AppLifecycleListener (startup initialization) |
+| `com.tj.crypto.task` | Scheduled tasks (CgTask) |
 
 ## Current Runtime Notes
 
@@ -96,7 +101,7 @@ Key runtime packages (133 source files, 43 packages):
 
 ## Known Gaps To Respect
 
-- ~~Full tests may currently be red.~~ **RESOLVED** — 334 tests, all green.
+- ~~Full tests may currently be red.~~ **RESOLVED** — 334 tests across 51 test classes, all green.
 - Application startup currently depends on MySQL because `AppLifecycleListener` queries `TradeSymbolMapper` on `ApplicationReadyEvent`.
 - ~~Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.~~ **RESOLVED** — BacktestEngine integrates ExecutionEngine, RiskEngine, PositionSizer, and SlippageModel. Full backtest verification tests pass.
 - Account equity, margin, short position semantics, fee model, min notional, precision, funding fee, and liquidation rules are not yet production-grade.
@@ -155,4 +160,4 @@ High-level direction:
 | L15 | 策略扩展到 6 个 | ✅ 完成 | LiquidationSpike/MacdCross/RsiCross/SuperTrend/BollingerBreakout/AtrTrailingStop |
 | L16 | 组合回测引擎 | ✅ 完成 | PortfolioBacktestEngine 支持多策略独立回测+合并报告，FourStrategyPortfolioTest 通过 |
 | L17 | Walk-Forward 优化 | ✅ 完成 | WalkForwardOptimizer 支持滚动窗口参数优化，WalkForwardTest 通过 |
-| L18 | 最终集成验证 | ✅ 完成 | FinalIntegrationTest 覆盖数据管线、回测管线、Admin API、策略热加载、4 策略组合回测，334 测试全部通过 |
+| L18 | 最终集成验证 | ✅ 完成 | FinalIntegrationTest 覆盖数据管线、回测管线、Admin API、策略热加载、4 策略组合回测。135 源文件、51 测试类、334 测试全部通过 |

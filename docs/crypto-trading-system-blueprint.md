@@ -2,7 +2,7 @@
 
 > 本文档是 `crypto-trading` 项目的总体开发指导文档。所有开发工作必须参照本文档的阶段目标、架构约束和设计原则执行。
 >
-> 最后更新：2026-06-27
+> 最后更新：2026-06-27（最终项目状态报告）
 
 ---
 
@@ -651,24 +651,29 @@ crypto-app
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| Coinglass WS 连接 | ✅ 已实现 | API key 通过 CoinglassProperties 配置（环境变量） |
-| Coinglass 爆仓数据接收 | ✅ 已实现 | LiquidationNormalizer → LiquidationEvent → MarketEventBus |
-| Binance WS 连接 | ✅ 已实现 | BinanceWebSocketClient，BarNormalizer → BarEvent → MarketEventBus |
+| Coinglass WS 连接 | ✅ 已实现 | OkHttpCoinglassWebSocketClient + CoinglassProperties（环境变量配置） |
+| Coinglass 爆仓数据接收 | ✅ 已实现 | CoinglassLiquidationNormalizer → LiquidationEvent → MarketEventBus |
+| Binance WS 连接 | ✅ 已实现 | OkHttpBinanceWebSocketClient + BinanceKlineNormalizer → BarEvent → MarketEventBus |
 | Binance KLine 解析 | ✅ 已实现 | BinanceKlineNormalizer 标准化为 BarEvent |
 | 历史数据回填 | ✅ 已实现 | BinanceHistoricalDataProvider 支持按时间范围批量下载 |
 | MarketEventBus 事件分发 | ✅ 已实现 | InMemoryEventBus，按事件类型 typed pub/sub |
 | StrategyEngine | ✅ 已实现 | 订阅 MarketEvent，异步分发到 Strategy beans |
-| 策略实现 | ✅ 3 个策略 | MacdCrossStrategy, RsiCrossStrategy, LiquidationSpikeStrategyV2 |
-| 因子系统 | ✅ 14 个因子 | 9 技术因子 + 5 衍生品因子，FactorRegistry 管理 |
-| 测试 | ✅ 209 测试 | 39 测试类，覆盖全部核心模块 |
-| 回测 | ✅ 已实现 | BacktestEngine + EventReplayer + VirtualAccount + PerformanceReport |
+| 策略实现 | ✅ 6 个策略 | MacdCross / RsiCross / LiquidationSpikeV2 / SuperTrend / BollingerBreakout / AtrTrailingStop |
+| 策略热加载 | ✅ 已实现 | StrategyManager 支持运行时启用/禁用，AdminController 提供 REST API |
+| 因子系统 | ✅ 19 个因子 | 10 技术因子 + 5 衍生品因子 + 4 框架类，FactorRegistry 管理 |
+| 测试 | ✅ 334 测试 | 51 测试类，覆盖全部核心模块 |
+| 回测 | ✅ 已实现 | BacktestEngine + EventReplayer + VirtualAccount + PerformanceReport + PortfolioBacktestEngine |
+| 组合回测 | ✅ 已实现 | PortfolioBacktestEngine 支持多策略独立回测 + 合并报告 |
+| Walk-Forward 优化 | ✅ 已实现 | WalkForwardOptimizer 支持滚动窗口参数优化 |
+| 参数优化 | ✅ 已实现 | ParameterOptimizer 支持网格搜索参数优化 |
 | 模拟交易 | ✅ 已实现 | PaperTradingEngine + VirtualAccount |
 | 风控 | ✅ 已实现 | RiskEngine + 3 条规则（MaxLoss/MaxDailyLoss/MaxPositionSize）+ PositionSizer |
 | 执行 | ✅ 已实现 | ExecutionEngine + FixedSlippageModel + Order 模型 |
-| 持久化 | ✅ 已实现 | BarEvent/SignalEvent/TradeRecord converter+mapper+service |
-| 数据质量检查 | ✅ 已实现 | DataQualityChecker |
-| 可观测性 | ⚠️ 基础 | observability 包基础指标 |
-| 策略热加载 | ❌ 未实现 | L10 待办 |
+| 费用模型 | ✅ 已实现 | MakerTakerFeeModel + FeeProperties |
+| 持久化 | ✅ 已实现 | BarEvent/SignalEvent/TradeRecord converter+mapper+service + EventPersistenceListener |
+| 数据质量检查 | ✅ 已实现 | DataQualityChecker + DataQualityReport |
+| Admin 管理 API | ✅ 已实现 | AdminController: /status, /signals, /factors, /strategies, /health |
+| 可观测性 | ⚠️ 基础 | SystemMetrics 基础指标 |
 
 ---
 
@@ -678,13 +683,13 @@ crypto-app
 |------|------|---------|------|
 | TD-1 | ~~Coinglass API key 硬编码在 URI 中~~ | 🔴 高 | ✅ 已修复 — 通过 CoinglassProperties 配置 |
 | TD-2 | ~~数据库密码硬编码在 application-dev.yml~~ | 🔴 高 | ✅ 已修复 — 使用环境变量占位符 |
-| TD-3 | BinanceWebSocketClient 使用 Tyrus，与 OkHttp 不一致 | 🟡 中 | 待修复 — 后续统一到 OkHttp |
+| TD-3 | BinanceWebSocketClient 使用 Tyrus，与 OkHttp 不一致 | 🟡 中 | 待修复 — OkHttpBinanceWebSocketClient 已实现，旧 Tyrus 客户端待移除 |
 | TD-4 | ~~Symbol 枚举的 desc 值为 "111"/"222" 无意义~~ | 🟡 中 | ✅ 已修复 — 旧 Symbol/Indicator 枚举已移除，使用 Instrument record |
 | TD-5 | ~~Indicator 枚举的 desc 值为 "111"/"222" 无意义~~ | 🟡 中 | ✅ 已修复 — 旧枚举已移除 |
 | TD-6 | TradeSymbolDO 类名有误导性（映射 ID 生成器表） | 🟡 中 | 待修复 |
 | TD-7 | ~~EventBus 只支持按 symbol 订阅，不支持按事件类型~~ | 🟡 中 | ✅ 已修复 — InMemoryEventBus 支持按事件类型 typed pub/sub |
 | TD-8 | ~~StrategyEngine.callOnEvent() 为 private，无法被外部调用~~ | 🔴 高 | ✅ 已修复 — StrategyEngine 订阅 MarketEventBus，公开分发 |
-| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 39 测试类，209 测试用例 |
+| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 51 测试类，334 测试用例，全部通过 |
 | TD-10 | CoinglassWebSocketClient 中 KLineData 直接 set 修改（可变） | 🟡 中 | 待修复 — KLineData 仍为可变 DTO |
 | TD-11 | ~~application.yml 中数据库连接使用默认密码 "111"~~ | 🔴 高 | ✅ 已修复 — 使用环境变量占位符 |
 | TD-12 | ~~Binance WS URL 硬编码旧地址格式~~ | 🟡 中 | ✅ 已修复 — 通过 WebsocketProperties 配置 |
