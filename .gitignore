@@ -43,3 +43,6 @@ build/
 .env.local
 application-local.yml
 application-local.yaml
+
+### Docker ###
+docker-compose.override.yml

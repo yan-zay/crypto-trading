@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Run Tests
+      run: mvn clean test -B
+
+    - name: Build Package
+      run: mvn package -DskipTests -B
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: crypto-trading-jar
+        path: target/crypto-trading-1.0.0.jar
+        retention-days: 7
