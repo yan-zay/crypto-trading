@@ -85,7 +85,8 @@ class ThreeStrategyPortfolioTest {
         PerformanceCalculator performanceCalculator = new PerformanceCalculator();
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
-                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties));
+                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties),
+                new com.tj.crypto.risk.KillSwitch());
 
         // 3. 创建回测引擎和组合回测引擎
         BacktestEngine backtestEngine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);

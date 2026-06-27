@@ -10,6 +10,7 @@ import com.tj.crypto.admin.dto.OverviewDTO;
 import com.tj.crypto.admin.dto.RiskConfigDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
+import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.storage.service.AutoBackfillService;
 import com.tj.crypto.storage.service.CoverageReport;
 import com.tj.crypto.storage.service.DataCoverageService;
@@ -43,6 +44,7 @@ public class AdminController {
     private final StrategyManager strategyManager;
     private final DataCoverageService dataCoverageService;
     private final AutoBackfillService autoBackfillService;
+    private final KillSwitch killSwitch;
 
     /**
      * 系统状态。
@@ -229,6 +231,48 @@ public class AdminController {
     @GetMapping("/risk/configs")
     public ResponseEntity<RiskConfigDTO> getRiskConfigs() {
         return ResponseEntity.ok(adminOverviewService.getRiskConfig());
+    }
+
+    // ========== 全局熔断端点 ==========
+
+    /**
+     * 查询 KillSwitch 状态。
+     */
+    @GetMapping("/risk/kill-switch")
+    public ResponseEntity<Map<String, Object>> getKillSwitchStatus() {
+        return ResponseEntity.ok(Map.of(
+                "active", killSwitch.isActive(),
+                "mode", killSwitch.getMode().name()
+        ));
+    }
+
+    /**
+     * 激活 KillSwitch。
+     *
+     * @param mode 熔断模式：NORMAL, CLOSE_ONLY, HALT
+     */
+    @PostMapping("/risk/kill-switch")
+    public ResponseEntity<Map<String, Object>> activateKillSwitch(
+            @RequestParam(defaultValue = "HALT") KillSwitch.Mode mode) {
+        killSwitch.activate(mode);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "active", killSwitch.isActive(),
+                "mode", killSwitch.getMode().name()
+        ));
+    }
+
+    /**
+     * 解除 KillSwitch，恢复正常交易。
+     */
+    @PostMapping("/risk/kill-switch/deactivate")
+    public ResponseEntity<Map<String, Object>> deactivateKillSwitch() {
+        killSwitch.deactivate();
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "active", false,
+                "mode", "NORMAL"
+        ));
     }
 
     // ========== 配置版本管理端点 ==========

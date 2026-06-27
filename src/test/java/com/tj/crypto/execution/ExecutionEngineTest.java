@@ -8,6 +8,7 @@ import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.execution.model.OrderStatus;
+import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskEngine;
 import com.tj.crypto.risk.RiskProperties;
@@ -47,6 +48,7 @@ class ExecutionEngineTest {
     private VirtualAccount account;
     private RiskEngine riskEngine;
     private FixedSlippageModel slippageModel;
+    private KillSwitch killSwitch;
 
     /** 始终通过的风控规则 */
     private RiskRule alwaysPassRule;
@@ -56,6 +58,7 @@ class ExecutionEngineTest {
         account = new VirtualAccount(INITIAL_BALANCE);
         RiskProperties riskProperties = new RiskProperties();
         slippageModel = new FixedSlippageModel(riskProperties);
+        killSwitch = new KillSwitch();
 
         alwaysPassRule = new RiskRule() {
             @Override
@@ -70,7 +73,7 @@ class ExecutionEngineTest {
         };
 
         riskEngine = new RiskEngine(List.of(alwaysPassRule));
-        engine = new ExecutionEngine(riskEngine, new PositionSizer(), slippageModel);
+        engine = new ExecutionEngine(riskEngine, new PositionSizer(), slippageModel, killSwitch);
     }
 
     // ─── 辅助方法 ───────────────────────────────────────────────
@@ -188,7 +191,7 @@ class ExecutionEngineTest {
 
             RiskEngine strictRiskEngine = new RiskEngine(List.of(strictRule));
             ExecutionEngine strictEngine = new ExecutionEngine(
-                    strictRiskEngine, new PositionSizer(), slippageModel
+                    strictRiskEngine, new PositionSizer(), slippageModel, killSwitch
             );
 
             SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);

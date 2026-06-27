@@ -59,7 +59,8 @@ class AdminControllerTest {
         dataCoverageService = mock(DataCoverageService.class);
         autoBackfillService = mock(AutoBackfillService.class);
         AdminController controller = new AdminController(adminService, adminOverviewService,
-                configVersionService, strategyManager, dataCoverageService, autoBackfillService);
+                configVersionService, strategyManager, dataCoverageService, autoBackfillService,
+                new com.tj.crypto.risk.KillSwitch());
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

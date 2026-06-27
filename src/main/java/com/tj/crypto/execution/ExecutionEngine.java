@@ -6,6 +6,7 @@ import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderEvent;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.execution.model.OrderType;
+import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskEngine;
 import com.tj.crypto.risk.PositionSizer;
@@ -39,11 +40,14 @@ public class ExecutionEngine {
     private final RiskEngine riskEngine;
     private final PositionSizer positionSizer;
     private final SlippageModel slippageModel;
+    private final KillSwitch killSwitch;
 
-    public ExecutionEngine(RiskEngine riskEngine, PositionSizer positionSizer, SlippageModel slippageModel) {
+    public ExecutionEngine(RiskEngine riskEngine, PositionSizer positionSizer,
+                           SlippageModel slippageModel, KillSwitch killSwitch) {
         this.riskEngine = riskEngine;
         this.positionSizer = positionSizer;
         this.slippageModel = slippageModel;
+        this.killSwitch = killSwitch;
     }
 
     /**
@@ -62,6 +66,28 @@ public class ExecutionEngine {
         }
 
         OrderSide side = signal.type() == SignalType.BUY ? OrderSide.LONG : OrderSide.SHORT;
+
+        // 1.1 KillSwitch 检查
+        if (killSwitch.isActive()) {
+            if (killSwitch.getMode() == KillSwitch.Mode.HALT) {
+                Order rejected = Order.rejected(signal.instrument(), side, OrderType.MARKET,
+                        BigDecimal.ZERO, OrderRejectReason.KILL_SWITCH, timestamp);
+                log.warn("[KILL_SWITCH] HALT mode — rejecting order for {}",
+                        signal.instrument().symbol());
+                logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
+                        OrderRejectReason.KILL_SWITCH));
+                return rejected;
+            }
+            if (killSwitch.getMode() == KillSwitch.Mode.CLOSE_ONLY && side == OrderSide.LONG) {
+                Order rejected = Order.rejected(signal.instrument(), side, OrderType.MARKET,
+                        BigDecimal.ZERO, OrderRejectReason.CLOSE_ONLY, timestamp);
+                log.warn("[KILL_SWITCH] CLOSE_ONLY mode — rejecting open order for {}",
+                        signal.instrument().symbol());
+                logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
+                        OrderRejectReason.CLOSE_ONLY));
+                return rejected;
+            }
+        }
 
         // 2. 计算仓位
         BigDecimal quantity = positionSizer.calculateSize(signal, account, currentPrice);

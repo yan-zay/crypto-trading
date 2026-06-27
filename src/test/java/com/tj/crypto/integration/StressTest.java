@@ -65,7 +65,8 @@ class StressTest {
         List<FactorCalculator> factorCalculators = List.of();
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
-                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties));
+                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties),
+                new com.tj.crypto.risk.KillSwitch());
         engine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);
     }
 

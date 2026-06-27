@@ -103,7 +103,8 @@ class BollingerBacktestTest {
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
                 new PositionSizer(),
-                new FixedSlippageModel(riskProperties));
+                new FixedSlippageModel(riskProperties),
+                new com.tj.crypto.risk.KillSwitch());
 
         // 7. 创建回测引擎和策略
         BacktestEngine engine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);
