@@ -75,7 +75,7 @@ Market data WS/REST
   -> Persistence (BarEvent/SignalEvent/TradeRecord via converter+mapper)
 ```
 
-Key runtime packages (202 source files, 25+ packages):
+Key runtime packages (202 source files, 53 packages):
 
 | Package | Responsibility |
 |---|---|
@@ -111,7 +111,7 @@ Key runtime packages (202 source files, 25+ packages):
 
 ## Known Gaps To Respect
 
-- ~~Full tests may currently be red.~~ **RESOLVED** — 520 tests across 70 test classes, all green (1 skipped).
+- ~~Full tests may currently be red.~~ **RESOLVED** — 553 tests across 71 test classes, all green (1 skipped).
 - Application startup currently depends on MySQL because `AppLifecycleListener` queries `TradeSymbolMapper` on `ApplicationReadyEvent`.
 - ~~Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.~~ **RESOLVED** — BacktestEngine integrates ExecutionEngine, RiskEngine, PositionSizer, and SlippageModel. Full backtest verification tests pass.
 - Account equity, margin, short position semantics, fee model, min notional, precision, funding fee, and liquidation rules are not yet production-grade.

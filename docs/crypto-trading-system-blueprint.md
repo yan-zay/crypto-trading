@@ -2,7 +2,7 @@
 
 > 本文档是 `crypto-trading` 项目的总体开发指导文档。所有开发工作必须参照本文档的阶段目标、架构约束和设计原则执行。
 >
-> 最后更新：2026-06-27（最终文档同步 + 代码清理 + 验证）
+> 最后更新：2026-06-27（最终文档同步 + 代码清理 + 验证 + 项目状态同步）
 
 ---
 
@@ -664,7 +664,7 @@ crypto-app
 | 策略评估 | ✅ 已实现 | StrategyEvaluator 策略绩效评估 |
 | 因子系统 | ✅ 14 个因子 | 9 技术因子 + 5 衍生品因子 + 7 框架/分析类，FactorRegistry 管理 |
 | 因子分析 | ✅ 已实现 | FactorAnalyzer + FactorReturnStats 因子收益分析 |
-| 测试 | ✅ 520 测试 | 70 测试类，覆盖全部核心模块（1 skipped） |
+| 测试 | ✅ 553 测试 | 71 测试类，覆盖全部核心模块（1 skipped） |
 | 回测 | ✅ 已实现 | BacktestEngine + EventReplayer + VirtualAccount + PerformanceReport + PortfolioBacktestEngine |
 | 组合回测 | ✅ 已实现 | PortfolioBacktestEngine 支持多策略独立回测 + 合并报告 |
 | Walk-Forward 优化 | ✅ 已实现 | WalkForwardOptimizer 支持滚动窗口参数优化 |
@@ -700,7 +700,7 @@ crypto-app
 | TD-6 | TradeSymbolDO 类名有误导性（映射 ID 生成器表） | 🟡 中 | 待修复 |
 | TD-7 | ~~EventBus 只支持按 symbol 订阅，不支持按事件类型~~ | 🟡 中 | ✅ 已修复 — InMemoryEventBus 支持按事件类型 typed pub/sub |
 | TD-8 | ~~StrategyEngine.callOnEvent() 为 private，无法被外部调用~~ | 🔴 高 | ✅ 已修复 — StrategyEngine 订阅 MarketEventBus，公开分发 |
-| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 70 测试类，520 测试用例，全部通过 |
+| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 71 测试类，553 测试用例，全部通过 |
 | TD-10 | CoinglassWebSocketClient 中 KLineData 直接 set 修改（可变） | 🟡 中 | 待修复 — KLineData 仍为可变 DTO |
 | TD-11 | ~~application.yml 中数据库连接使用默认密码 "111"~~ | 🔴 高 | ✅ 已修复 — 使用环境变量占位符 |
 | TD-12 | ~~Binance WS URL 硬编码旧地址格式~~ | 🟡 中 | ✅ 已修复 — 通过 WebsocketProperties 配置 |
