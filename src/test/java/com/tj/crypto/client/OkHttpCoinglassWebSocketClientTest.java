@@ -5,6 +5,8 @@ import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.normalize.CoinglassLiquidationNormalizer;
+import com.tj.crypto.storage.mapper.RawMessageMapper;
+import com.tj.crypto.storage.service.RawMessagePersistenceService;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +36,10 @@ class OkHttpCoinglassWebSocketClientTest {
         CoinglassProperties properties = new CoinglassProperties();
         properties.setApiKey("test-key");
 
-        client = new OkHttpCoinglassWebSocketClient(okHttpClient, properties, normalizer, eventBus);
+        // 使用 null mapper 构造 service — saveRawMessage 会抛异常，但 handleMessage 会 catch 住
+        RawMessagePersistenceService rawMessageService = new RawMessagePersistenceService(null);
+
+        client = new OkHttpCoinglassWebSocketClient(okHttpClient, properties, normalizer, eventBus, rawMessageService);
 
         eventBus.subscribe(LiquidationEvent.class, receivedEvent::set);
     }

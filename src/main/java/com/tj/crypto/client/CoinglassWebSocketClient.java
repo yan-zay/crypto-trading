@@ -10,6 +10,7 @@ import com.tj.crypto.marketdata.normalize.CoinglassLiquidationNormalizer;
 import com.tj.crypto.pojo.dto.CgResultDTO;
 import com.tj.crypto.pojo.dto.KLineData;
 import com.tj.crypto.pojo.dto.LiquidationOrder;
+import com.tj.crypto.storage.service.RawMessagePersistenceService;
 import jakarta.websocket.*;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.tyrus.client.ClientManager;
@@ -46,6 +47,7 @@ public class CoinglassWebSocketClient {
     private final CoinglassProperties coinglassProperties;
     private final CoinglassLiquidationNormalizer liquidationNormalizer;
     private final MarketEventBus eventBus;
+    private final RawMessagePersistenceService rawMessagePersistenceService;
 
     private final CountDownLatch connectionLatch = new CountDownLatch(1);
     private final AtomicReference<String> lastMessage = new AtomicReference<>();
@@ -55,12 +57,14 @@ public class CoinglassWebSocketClient {
                                      CoinglassProperties coinglassProperties,
                                      CoinglassLiquidationNormalizer liquidationNormalizer,
                                      MarketEventBus eventBus,
-                                     WebsocketProperties websocketProperties) {
+                                     WebsocketProperties websocketProperties,
+                                     RawMessagePersistenceService rawMessagePersistenceService) {
         this.clientManager = clientManager;
         this.coinglassProperties = coinglassProperties;
         this.liquidationNormalizer = liquidationNormalizer;
         this.eventBus = eventBus;
         this.websocketProperties = websocketProperties;
+        this.rawMessagePersistenceService = rawMessagePersistenceService;
     }
 
     public void connect() {
@@ -94,6 +98,15 @@ public class CoinglassWebSocketClient {
         try {
             log.info("Received raw message: {}", message);
             lastMessage.set(message);
+
+            // 保存原始消息（异步，不阻塞主流程）
+            try {
+                rawMessagePersistenceService.saveRawMessage(
+                        "coinglass", "liquidationOrders", "ALL", message);
+            } catch (Exception e) {
+                log.warn("Failed to save raw message: {}", e.getMessage());
+            }
+
             // 解析JSON消息
             CgResultDTO<LiquidationOrder> obj = objectMapper.readValue(message, new TypeReference<CgResultDTO<LiquidationOrder>>() {});
             handleData(obj);
