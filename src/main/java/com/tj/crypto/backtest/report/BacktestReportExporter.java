@@ -44,6 +44,24 @@ public class BacktestReportExporter {
 
         sb.append("# Backtest Performance Report\n\n");
 
+        // 回测假设
+        if (result.assumptions() != null) {
+            sb.append("## Backtest Assumptions\n\n");
+            sb.append("| Assumption | Value |\n");
+            sb.append("|------------|-------|\n");
+            sb.append("| Fill Mode | ").append(result.assumptions().fillMode()).append(" |\n");
+            sb.append("| Slippage Model | ").append(result.assumptions().slippageModel()).append(" |\n");
+            sb.append("| Fee Model | ").append(result.assumptions().feeModel()).append(" |\n");
+            sb.append("| Min Notional | ").append(result.assumptions().minNotional()).append(" |\n");
+            sb.append("| Quantity Precision | ").append(result.assumptions().quantityPrecision()).append(" |\n");
+            sb.append("| Price Precision | ").append(result.assumptions().pricePrecision()).append(" |\n");
+            sb.append("| Funding Rate | ").append(result.assumptions().fundingRateEnabled() ? "Enabled" : "Disabled").append(" |\n");
+            sb.append("\n");
+            if (result.assumptions().fillMode() == com.tj.crypto.backtest.engine.BacktestAssumptions.FillMode.INTERPOLATED) {
+                sb.append("> **Warning**: INTERPOLATED fill mode uses (open + close) / 2, which is more optimistic than real trading.\n\n");
+            }
+        }
+
         // 概览
         sb.append("## Overview\n\n");
         sb.append("| Metric | Value |\n");

@@ -1,5 +1,8 @@
 package com.tj.crypto.backtest.engine;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.tj.crypto.backtest.data.HistoricalDataProvider;
 import com.tj.crypto.backtest.portfolio.FeeModel;
 import com.tj.crypto.backtest.portfolio.VirtualAccount;
@@ -31,8 +34,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * - 回测使用独立的 InMemoryEventBus，不影响全局
  * - 回测同步执行（事件总线同步派发），确保确定性
  * - 复用同一套 Strategy 接口和 MarketEvent 模型
- * - 使用最后一根 bar 的收盘价平仓（而非 0）
+ * - 使用 FillModel 决定成交价格（防未来函数）
  * - 支持手续费模型（可选）
+ * - 回测报告包含假设快照
  */
 @Slf4j
 @Component
@@ -42,24 +46,39 @@ public class BacktestEngine {
     private final List<FactorCalculator> factorCalculators;
     private final ExecutionEngine executionEngine;
     private final FeeModel feeModel;
+    private final BacktestAssumptions assumptions;
+    private final FillModel fillModel;
+    private final ObjectMapper objectMapper;
+
+    public BacktestEngine(PerformanceCalculator performanceCalculator,
+                          List<FactorCalculator> factorCalculators,
+                          ExecutionEngine executionEngine,
+                          FeeModel feeModel,
+                          BacktestAssumptions assumptions) {
+        this.performanceCalculator = performanceCalculator;
+        this.factorCalculators = factorCalculators;
+        this.executionEngine = executionEngine;
+        this.feeModel = feeModel;
+        this.assumptions = assumptions != null ? assumptions : BacktestAssumptions.defaults();
+        this.fillModel = FillModel.create(this.assumptions.fillMode());
+        this.objectMapper = new ObjectMapper();
+        this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+    }
 
     public BacktestEngine(PerformanceCalculator performanceCalculator,
                           List<FactorCalculator> factorCalculators,
                           ExecutionEngine executionEngine,
                           FeeModel feeModel) {
-        this.performanceCalculator = performanceCalculator;
-        this.factorCalculators = factorCalculators;
-        this.executionEngine = executionEngine;
-        this.feeModel = feeModel;
+        this(performanceCalculator, factorCalculators, executionEngine, feeModel, null);
     }
 
     /**
-     * 便捷构造函数（无手续费模型）。
+     * 便捷构造函数（无手续费模型，使用默认假设）。
      */
     public BacktestEngine(PerformanceCalculator performanceCalculator,
                           List<FactorCalculator> factorCalculators,
                           ExecutionEngine executionEngine) {
-        this(performanceCalculator, factorCalculators, executionEngine, null);
+        this(performanceCalculator, factorCalculators, executionEngine, null, null);
     }
 
     /**
@@ -96,8 +115,9 @@ public class BacktestEngine {
             SignalEvent signal = strategy.onEvent(bar, backtestContext);
             if (signal != null) {
                 signals.add(signal);
-                // 通过 ExecutionEngine 执行（含风控 + 仓位 + 滑点）
-                executionEngine.execute(signal, account, bar.close(), bar.metadata().exchangeTimestamp());
+                // 使用 FillModel 计算基础价格，ExecutionEngine 会应用滑点
+                BigDecimal basePrice = fillModel.calculateBasePrice(bar);
+                executionEngine.execute(signal, account, basePrice, bar.metadata().exchangeTimestamp());
             }
         });
 
@@ -109,17 +129,20 @@ public class BacktestEngine {
         // 8. 使用最后一根 bar 的收盘价平仓（而非 0）
         closeAllPositions(account, config.instrument(), lastClosePrice.get(), config.endTime());
 
-        // 9. 计算性能报告
+        // 9. 序列化假设为 JSON
+        String assumptionsJson = serializeAssumptions();
+
+        // 10. 计算性能报告（含假设快照）
         BigDecimal finalBalance = account.getBalance();
         PerformanceReport report = performanceCalculator.calculate(
                 account.getTrades(), config.initialBalance(), finalBalance,
-                config.startTime(), config.endTime());
+                config.startTime(), config.endTime(), assumptionsJson);
 
-        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, {}",
+        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, fillMode={}, {}",
                 eventCount, signals.size(), account.getTrades().size(),
-                account.getTotalFeesPaid(), report);
+                account.getTotalFeesPaid(), assumptions.fillMode(), report);
 
-        return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
+        return new BacktestResult(config, signals, account.getTrades(), report, finalBalance, assumptions);
     }
 
     private void closeAllPositions(VirtualAccount account, Instrument instrument,
@@ -170,7 +193,9 @@ public class BacktestEngine {
             SignalEvent signal = strategy.onEvent(bar, backtestContext);
             if (signal != null) {
                 signals.add(signal);
-                executionEngine.execute(signal, account, bar.close(), bar.metadata().exchangeTimestamp());
+                // 使用 FillModel 计算基础价格，ExecutionEngine 会应用滑点
+                BigDecimal basePrice = fillModel.calculateBasePrice(bar);
+                executionEngine.execute(signal, account, basePrice, bar.metadata().exchangeTimestamp());
             }
         });
 
@@ -182,17 +207,32 @@ public class BacktestEngine {
         // 9. 使用最后一根 bar 的收盘价平仓
         closeAllPositions(account, config.instrument(), lastClosePrice.get(), config.endTime());
 
-        // 10. 计算性能报告
+        // 10. 序列化假设为 JSON
+        String assumptionsJson = serializeAssumptions();
+
+        // 11. 计算性能报告（含假设快照）
         BigDecimal finalBalance = account.getBalance();
         PerformanceReport report = performanceCalculator.calculate(
                 account.getTrades(), config.initialBalance(), finalBalance,
-                config.startTime(), config.endTime());
+                config.startTime(), config.endTime(), assumptionsJson);
 
-        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, {}",
+        log.info("Backtest complete: {} events, {} signals, {} trades, totalFees=${}, fillMode={}, {}",
                 eventCount, signals.size(), account.getTrades().size(),
-                account.getTotalFeesPaid(), report);
+                account.getTotalFeesPaid(), assumptions.fillMode(), report);
 
-        return new BacktestResult(config, signals, account.getTrades(), report, finalBalance);
+        return new BacktestResult(config, signals, account.getTrades(), report, finalBalance, assumptions);
+    }
+
+    /**
+     * 序列化假设为 JSON 字符串。
+     */
+    private String serializeAssumptions() {
+        try {
+            return objectMapper.writeValueAsString(assumptions);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize assumptions to JSON", e);
+            return "{}";
+        }
     }
 
     /**

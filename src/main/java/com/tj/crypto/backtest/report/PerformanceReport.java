@@ -29,6 +29,7 @@ import java.util.Map;
  * @param maxLoseStreak        最大连亏次数
  * @param monthlyReturns       月度收益（key: yyyy-MM, value: 收益额）
  * @param totalFees            总手续费
+ * @param assumptionsJson      回测假设快照（JSON 字符串）
  */
 public record PerformanceReport(
         BigDecimal totalReturn,
@@ -53,7 +54,8 @@ public record PerformanceReport(
         int maxWinStreak,
         int maxLoseStreak,
         Map<String, BigDecimal> monthlyReturns,
-        BigDecimal totalFees
+        BigDecimal totalFees,
+        String assumptionsJson
 ) {
     /**
      * 紧凑构造函数，确保 totalFees 不为 null。
@@ -62,6 +64,26 @@ public record PerformanceReport(
         if (totalFees == null) {
             totalFees = BigDecimal.ZERO;
         }
+        if (assumptionsJson == null) {
+            assumptionsJson = "{}";
+        }
+    }
+
+    /**
+     * 便捷构造函数（无假设 JSON）。
+     */
+    public PerformanceReport(BigDecimal totalReturn, BigDecimal maxDrawdown, BigDecimal winRate,
+                              int totalTrades, int winningTrades, int losingTrades,
+                              BigDecimal avgWin, BigDecimal avgLoss, BigDecimal profitFactor,
+                              int maxConsecutiveLosses, BigDecimal initialBalance, BigDecimal finalBalance,
+                              long startTime, long endTime, BigDecimal annualizedReturn,
+                              BigDecimal sharpeRatio, BigDecimal sortinoRatio, BigDecimal calmarRatio,
+                              BigDecimal avgTradeDuration, int maxWinStreak, int maxLoseStreak,
+                              Map<String, BigDecimal> monthlyReturns, BigDecimal totalFees) {
+        this(totalReturn, maxDrawdown, winRate, totalTrades, winningTrades, losingTrades,
+                avgWin, avgLoss, profitFactor, maxConsecutiveLosses, initialBalance, finalBalance,
+                startTime, endTime, annualizedReturn, sharpeRatio, sortinoRatio, calmarRatio,
+                avgTradeDuration, maxWinStreak, maxLoseStreak, monthlyReturns, totalFees, "{}");
     }
 
     @Override

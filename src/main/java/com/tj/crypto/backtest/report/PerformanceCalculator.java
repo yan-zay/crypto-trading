@@ -41,6 +41,23 @@ public class PerformanceCalculator {
      */
     public PerformanceReport calculate(List<Trade> trades, BigDecimal initialBalance,
                                         BigDecimal finalBalance, long startTime, long endTime) {
+        return calculate(trades, initialBalance, finalBalance, startTime, endTime, "{}");
+    }
+
+    /**
+     * 计算性能报告（含假设快照）。
+     *
+     * @param trades         交易记录
+     * @param initialBalance 初始资金
+     * @param finalBalance   最终资金
+     * @param startTime      回测起始时间
+     * @param endTime        回测结束时间
+     * @param assumptionsJson 回测假设快照（JSON 字符串）
+     * @return 性能报告
+     */
+    public PerformanceReport calculate(List<Trade> trades, BigDecimal initialBalance,
+                                        BigDecimal finalBalance, long startTime, long endTime,
+                                        String assumptionsJson) {
         if (trades.isEmpty()) {
             return emptyReport(initialBalance, startTime, endTime);
         }
@@ -142,7 +159,7 @@ public class PerformanceCalculator {
                 initialBalance, finalBalance, startTime, endTime,
                 annualizedReturn, sharpeRatio, sortinoRatio, calmarRatio,
                 avgTradeDuration, maxWinStreak, maxLoseStreak, monthlyReturns,
-                totalFees
+                totalFees, assumptionsJson
         );
     }
 
