@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Configuration
 @AllArgsConstructor
-public class OKHttpConfig {
+public class OkHttpConfig {
 
     private final ProxyProperties proxyProperties;
 

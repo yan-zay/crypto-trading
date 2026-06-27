@@ -24,7 +24,6 @@
         <lombok.version>1.18.40</lombok.version>
         <mybatis-plus.version>3.5.14</mybatis-plus.version>
         <okhttp.version>4.12.0</okhttp.version>
-        <binance-connector-java.version>3.4.1</binance-connector-java.version>
     </properties>
 
     <dependencies>
@@ -35,11 +34,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
