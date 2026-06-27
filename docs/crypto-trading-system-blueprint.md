@@ -2,7 +2,7 @@
 
 > 本文档是 `crypto-trading` 项目的总体开发指导文档。所有开发工作必须参照本文档的阶段目标、架构约束和设计原则执行。
 >
-> 最后更新：2026-06-27（最终项目状态报告）
+> 最后更新：2026-06-27（最终文档同步 + 代码清理 + 验证）
 
 ---
 
@@ -660,20 +660,31 @@ crypto-app
 | StrategyEngine | ✅ 已实现 | 订阅 MarketEvent，异步分发到 Strategy beans |
 | 策略实现 | ✅ 6 个策略 | MacdCross / RsiCross / LiquidationSpikeV2 / SuperTrend / BollingerBreakout / AtrTrailingStop |
 | 策略热加载 | ✅ 已实现 | StrategyManager 支持运行时启用/禁用，AdminController 提供 REST API |
-| 因子系统 | ✅ 19 个因子 | 10 技术因子 + 5 衍生品因子 + 4 框架类，FactorRegistry 管理 |
-| 测试 | ✅ 334 测试 | 51 测试类，覆盖全部核心模块 |
+| 策略组合管理 | ✅ 已实现 | StrategyPortfolio 支持多策略资金分配 |
+| 策略评估 | ✅ 已实现 | StrategyEvaluator 策略绩效评估 |
+| 因子系统 | ✅ 14 个因子 | 9 技术因子 + 5 衍生品因子 + 7 框架/分析类，FactorRegistry 管理 |
+| 因子分析 | ✅ 已实现 | FactorAnalyzer + FactorReturnStats 因子收益分析 |
+| 测试 | ✅ 520 测试 | 70 测试类，覆盖全部核心模块（1 skipped） |
 | 回测 | ✅ 已实现 | BacktestEngine + EventReplayer + VirtualAccount + PerformanceReport + PortfolioBacktestEngine |
 | 组合回测 | ✅ 已实现 | PortfolioBacktestEngine 支持多策略独立回测 + 合并报告 |
 | Walk-Forward 优化 | ✅ 已实现 | WalkForwardOptimizer 支持滚动窗口参数优化 |
 | 参数优化 | ✅ 已实现 | ParameterOptimizer 支持网格搜索参数优化 |
 | 模拟交易 | ✅ 已实现 | PaperTradingEngine + VirtualAccount |
-| 风控 | ✅ 已实现 | RiskEngine + 3 条规则（MaxLoss/MaxDailyLoss/MaxPositionSize）+ PositionSizer |
-| 执行 | ✅ 已实现 | ExecutionEngine + FixedSlippageModel + Order 模型 |
+| 期货账户 | ✅ 已实现 | FuturesAccount + FuturesPosition + MarginMode |
+| 风控 | ✅ 已实现 | RiskEngine + 6 条规则 + KillSwitch + DrawdownGuard + PositionSizer |
+| 执行 | ✅ 已实现 | ExecutionEngine + OrderStateMachine + FixedSlippageModel + Order 模型 |
 | 费用模型 | ✅ 已实现 | MakerTakerFeeModel + FeeProperties |
-| 持久化 | ✅ 已实现 | BarEvent/SignalEvent/TradeRecord converter+mapper+service + EventPersistenceListener |
+| 持久化 | ✅ 已实现 | BarEvent/SignalEvent/TradeRecord/RawMessage converter+mapper+service + EventPersistenceListener |
+| 数据覆盖率 | ✅ 已实现 | DataCoverageService + CoverageReport 检测数据缺口 |
+| 数据血缘 | ✅ 已实现 | DataLineageService 追踪数据来源和版本 |
+| 数据自动回填 | ✅ 已实现 | AutoBackfillService + MarketDataPersistenceService |
 | 数据质量检查 | ✅ 已实现 | DataQualityChecker + DataQualityReport |
 | Admin 管理 API | ✅ 已实现 | AdminController: /status, /signals, /factors, /strategies, /health |
-| 可观测性 | ⚠️ 基础 | SystemMetrics 基础指标 |
+| Admin 认证鉴权 | ✅ 已实现 | AuthService + AuthInterceptor + Role 枚举 |
+| 配置版本管理 | ✅ 已实现 | ConfigVersionService + ConfigSyncService + ConfigVersionDO |
+| 审计日志 | ✅ 已实现 | AuditService + AuditLogDO |
+| 可观测性 | ✅ 已实现 | SystemMetrics + AlertService + AlertRule + MetricsSnapshot |
+| 前端控制台 | ✅ 已实现 | React + Ant Design + Vite，6 个页面（Dashboard/Factors/Signals/Strategies/Risk/Backtests） |
 
 ---
 
@@ -689,10 +700,11 @@ crypto-app
 | TD-6 | TradeSymbolDO 类名有误导性（映射 ID 生成器表） | 🟡 中 | 待修复 |
 | TD-7 | ~~EventBus 只支持按 symbol 订阅，不支持按事件类型~~ | 🟡 中 | ✅ 已修复 — InMemoryEventBus 支持按事件类型 typed pub/sub |
 | TD-8 | ~~StrategyEngine.callOnEvent() 为 private，无法被外部调用~~ | 🔴 高 | ✅ 已修复 — StrategyEngine 订阅 MarketEventBus，公开分发 |
-| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 51 测试类，334 测试用例，全部通过 |
+| TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 70 测试类，520 测试用例，全部通过 |
 | TD-10 | CoinglassWebSocketClient 中 KLineData 直接 set 修改（可变） | 🟡 中 | 待修复 — KLineData 仍为可变 DTO |
 | TD-11 | ~~application.yml 中数据库连接使用默认密码 "111"~~ | 🔴 高 | ✅ 已修复 — 使用环境变量占位符 |
 | TD-12 | ~~Binance WS URL 硬编码旧地址格式~~ | 🟡 中 | ✅ 已修复 — 通过 WebsocketProperties 配置 |
+| TD-13 | 前端构建 chunk 超过 500 kB | 🟢 低 | 待优化 — 考虑 code-splitting |
 
 ---
 

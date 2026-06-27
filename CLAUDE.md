@@ -33,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - TA4J 0.17（技术指标）
 - Lombok / Hutool / Jackson
 - Spring Boot Actuator
+- React 19 + Ant Design 6 + Vite 8 + TypeScript 6（前端管理控制台）
 
 ## Build & Run
 
@@ -52,6 +53,15 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 mvn test
 ```
 
+Frontend (admin console):
+
+```bash
+cd frontend
+npm install
+npm run dev      # 开发服务器
+npm run build    # 生产构建 → frontend/dist/
+```
+
 ## Current Architecture
 
 ```text
@@ -65,7 +75,7 @@ Market data WS/REST
   -> Persistence (BarEvent/SignalEvent/TradeRecord via converter+mapper)
 ```
 
-Key runtime packages (135 source files, 22 packages):
+Key runtime packages (202 source files, 25+ packages):
 
 | Package | Responsibility |
 |---|---|
@@ -73,17 +83,17 @@ Key runtime packages (135 source files, 22 packages):
 | `com.tj.crypto.event` | `MarketEventBus` interface + `InMemoryEventBus` (typed pub/sub) |
 | `com.tj.crypto.client` | Coinglass and Binance WebSocket clients (OkHttp + Tyrus, 4 clients) |
 | `com.tj.crypto.service` | WebSocket lifecycle management (connect, subscribe, health check, 4 services) |
-| `com.tj.crypto.factor` | Factor calculators (19 factors: 10 technical + 5 derivative + 4 framework), registry, bar cache, TA4J converter |
-| `com.tj.crypto.strategy` | Strategy interface, context, signal model, StrategyManager (hot-reload), 6 strategy implementations |
+| `com.tj.crypto.factor` | Factor calculators (14 calculators: 9 technical + 5 derivative + 7 framework/analysis classes), registry, bar cache, TA4J converter |
+| `com.tj.crypto.strategy` | Strategy interface, context, signal model, StrategyManager (hot-reload), 6 strategy implementations, portfolio, evaluator |
 | `com.tj.crypto.central` | `StrategyEngine` (event routing to strategy beans) |
-| `com.tj.crypto.backtest` | Backtest engine, event replayer, virtual account, paper trading, portfolio backtest, walk-forward optimizer, parameter optimizer, fee model, reports |
-| `com.tj.crypto.risk` | Risk engine, 3 risk rules, position sizer, risk properties |
-| `com.tj.crypto.execution` | Execution engine, order model, fixed slippage model |
-| `com.tj.crypto.storage` | Persistence converters (3), entities (3), mappers (3), services (4), event listener |
-| `com.tj.crypto.admin` | AdminController + AdminService, REST API for system status, strategies, factors, signals, health |
+| `com.tj.crypto.backtest` | Backtest engine, event replayer, virtual account, paper trading, portfolio backtest, walk-forward optimizer, parameter optimizer, fee model, futures account, reports |
+| `com.tj.crypto.risk` | Risk engine, 6 risk rules (MaxDailyLoss/MaxLossPerTrade/MaxPositionSize/Cooldown/PerSymbolExposure/TotalExposure), kill switch, drawdown guard, position sizer |
+| `com.tj.crypto.execution` | Execution engine, order state machine, order model, fixed slippage model |
+| `com.tj.crypto.storage` | Persistence converters (3), entities (4), mappers (4), services (8: bar/signal/trade/raw/coverage/lineage/autobackfill/market), event listener |
+| `com.tj.crypto.admin` | AdminController, auth interceptor, config versioning (ConfigVersionService), audit service, overview service, REST API for system status/strategies/factors/signals/health |
 | `com.tj.crypto.config` | Spring configuration: OkHttp proxy, thread pool, WebSocket container, dotenv, properties |
-| `com.tj.crypto.common.domain` | Shared domain models (Exchange, Instrument, Timeframe, OrderSide, ChannelType, MarketType) |
-| `com.tj.crypto.observability` | System metrics (SystemMetrics) |
+| `com.tj.crypto.common.domain` | Shared domain models (Exchange, Instrument, Timeframe, OrderSide, ChannelType, MarketType, MarketRegime) |
+| `com.tj.crypto.observability` | System metrics, alert service, alert rules, metrics snapshot |
 | `com.tj.crypto.pojo.dto` | Legacy DTOs (CgResultDTO, KLineData, LiquidationOrder, LiquidationOrderSum) |
 | `com.tj.crypto.entity` | Database entities and base classes (PhysicsTimeBaseDO, TradeSymbolDO) |
 | `com.tj.crypto.mapper` | MyBatis-Plus Mappers (BaseMapperX, TradeSymbolMapper) |
@@ -101,11 +111,15 @@ Key runtime packages (135 source files, 22 packages):
 
 ## Known Gaps To Respect
 
-- ~~Full tests may currently be red.~~ **RESOLVED** — 334 tests across 51 test classes, all green.
+- ~~Full tests may currently be red.~~ **RESOLVED** — 520 tests across 70 test classes, all green (1 skipped).
 - Application startup currently depends on MySQL because `AppLifecycleListener` queries `TradeSymbolMapper` on `ApplicationReadyEvent`.
 - ~~Backtest and paper trading paths currently need review for parity with `ExecutionEngine`, `RiskEngine`, `PositionSizer`, and `SlippageModel`.~~ **RESOLVED** — BacktestEngine integrates ExecutionEngine, RiskEngine, PositionSizer, and SlippageModel. Full backtest verification tests pass.
 - Account equity, margin, short position semantics, fee model, min notional, precision, funding fee, and liquidation rules are not yet production-grade.
 - `TestController` is a development-only controller and must not be exposed in production.
+- Frontend chunk size warning (>500 kB) — consider code-splitting for production.
+- Old Tyrus-based WebSocket clients (`BinanceWebSocketClient`, `CoinglassWebSocketClient`) coexist with OkHttp variants — old clients should be removed when confirmed unused.
+- `TradeSymbolDO` class name is misleading (maps to ID generator table `biz_tiny_id`).
+- `KLineData` DTO is still mutable (should be converted to record).
 
 ## Development Rules
 
@@ -160,4 +174,26 @@ High-level direction:
 | L15 | 策略扩展到 6 个 | ✅ 完成 | LiquidationSpike/MacdCross/RsiCross/SuperTrend/BollingerBreakout/AtrTrailingStop |
 | L16 | 组合回测引擎 | ✅ 完成 | PortfolioBacktestEngine 支持多策略独立回测+合并报告，FourStrategyPortfolioTest 通过 |
 | L17 | Walk-Forward 优化 | ✅ 完成 | WalkForwardOptimizer 支持滚动窗口参数优化，WalkForwardTest 通过 |
-| L18 | 最终集成验证 | ✅ 完成 | FinalIntegrationTest 覆盖数据管线、回测管线、Admin API、策略热加载、4 策略组合回测。135 源文件、51 测试类、334 测试全部通过 |
+| L18 | 最终集成验证 | ✅ 完成 | FinalIntegrationTest 覆盖数据管线、回测管线、Admin API、策略热加载、4 策略组合回测 |
+
+### ✅ 已完成任务 (L19-L35)
+
+| # | 任务 | 状态 | 说明 |
+|---|------|------|------|
+| L19 | 风控规则扩展 | ✅ 完成 | 新增 CooldownRule、PerSymbolExposureRule、TotalExposureRule，共 6 条风控规则 |
+| L20 | Kill Switch / Drawdown Guard | ✅ 完成 | KillSwitch 紧急停止、DrawdownGuard 回撤保护，RiskEngineTest/KillSwitchTest/DrawdownGuardTest 通过 |
+| L21 | 期货账户模型 | ✅ 完成 | FuturesAccount + FuturesPosition + MarginMode，FuturesAccountTest 通过 |
+| L22 | 订单状态机 | ✅ 完成 | OrderStateMachine 管理订单生命周期，OrderStateMachineTest 通过 |
+| L23 | 回测假设文档 | ✅ 完成 | BacktestAssumptions 明确回测简化假设，BacktestAssumptionsTest 通过 |
+| L24 | Admin 认证与鉴权 | ✅ 完成 | AuthService + AuthInterceptor + Role 枚举，AuthServiceTest/AuthInterceptorTest 通过 |
+| L25 | 配置版本管理 | ✅ 完成 | ConfigVersionService + ConfigVersionDO + ConfigSyncService，ConfigVersionServiceTest 通过 |
+| L26 | 审计日志 | ✅ 完成 | AuditService + AuditLogDO + AuditLogMapper |
+| L27 | Admin 概览服务 | ✅ 完成 | AdminOverviewService 聚合系统状态，AdminOverviewServiceTest 通过 |
+| L28 | 数据覆盖率服务 | ✅ 完成 | DataCoverageService 检测数据缺口，CoverageReport 生成覆盖率报告，DataCoverageServiceTest 通过 |
+| L29 | 数据血缘追踪 | ✅ 完成 | DataLineageService 追踪数据来源和版本，DataLineageServiceTest 通过 |
+| L30 | 原始消息持久化 | ✅ 完成 | RawMessagePersistenceService + RawMessageDO + RawMessageMapper，RawMessagePersistenceServiceTest 通过 |
+| L31 | 市场数据自动回填 | ✅ 完成 | AutoBackfillService + MarketDataPersistenceService |
+| L32 | 告警系统 | ✅ 完成 | AlertService + AlertRule + AlertEvent，AlertServiceTest 通过 |
+| L33 | 因子分析框架 | ✅ 完成 | FactorAnalyzer + FactorReturnStats，FactorAnalyzerTest 通过 |
+| L34 | 压力测试 | ✅ 完成 | StressTest 覆盖大数据量、并发策略、异常数据场景 |
+| L35 | 前端管理控制台 | ✅ 完成 | React + Ant Design + Vite 前端，Dashboard/Factors/Signals/Strategies/Risk/Backtests 6 个页面 |
