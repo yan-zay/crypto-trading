@@ -1,9 +1,12 @@
 package com.tj.crypto.admin;
 
 import com.tj.crypto.admin.application.AdminOverviewService;
+import com.tj.crypto.admin.application.AuditService;
+import com.tj.crypto.admin.application.AuthService;
 import com.tj.crypto.admin.application.ConfigVersionService;
 import com.tj.crypto.admin.domain.ConfigType;
 import com.tj.crypto.admin.domain.ConfigVersion;
+import com.tj.crypto.admin.domain.UserDO;
 import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.OverviewDTO;
@@ -21,6 +24,7 @@ import com.tj.crypto.storage.service.CoverageReport;
 import com.tj.crypto.storage.service.DataCoverageService;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.StrategyManager;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -53,6 +57,35 @@ public class AdminController {
     private final KillSwitch killSwitch;
     private final AlertService alertService;
     private final SystemMetrics systemMetrics;
+    private final AuthService authService;
+    private final AuditService auditService;
+
+    // ========== 登录端点（不需要认证） ==========
+
+    /**
+     * 用户登录。
+     * 验证用户名密码，返回 token。
+     */
+    @PostMapping("/login")
+    public ResponseEntity<Map<String, Object>> login(
+            @RequestParam String username,
+            @RequestParam String password,
+            HttpServletRequest request) {
+        try {
+            String token = authService.login(username, password);
+            auditService.logOperation(username, "LOGIN",
+                    "ip=" + request.getRemoteAddr());
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "token", token
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "success", false,
+                    "error", e.getMessage()
+            ));
+        }
+    }
 
     /**
      * 系统状态。
@@ -115,7 +148,8 @@ public class AdminController {
      * @param name 策略名称
      */
     @PostMapping("/strategies/{name}/enable")
-    public ResponseEntity<Map<String, Object>> enableStrategy(@PathVariable String name) {
+    public ResponseEntity<Map<String, Object>> enableStrategy(@PathVariable String name,
+                                                               HttpServletRequest request) {
         boolean success = strategyManager.enableStrategy(name);
         if (!success) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -123,6 +157,8 @@ public class AdminController {
                     "error", "Unknown strategy: " + name
             ));
         }
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "ENABLE_STRATEGY", "strategy=" + name);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "strategy", name,
@@ -137,7 +173,8 @@ public class AdminController {
      * @param name 策略名称
      */
     @PostMapping("/strategies/{name}/disable")
-    public ResponseEntity<Map<String, Object>> disableStrategy(@PathVariable String name) {
+    public ResponseEntity<Map<String, Object>> disableStrategy(@PathVariable String name,
+                                                                HttpServletRequest request) {
         boolean success = strategyManager.disableStrategy(name);
         if (!success) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -145,6 +182,8 @@ public class AdminController {
                     "error", "Unknown strategy: " + name
             ));
         }
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "DISABLE_STRATEGY", "strategy=" + name);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "strategy", name,
@@ -203,8 +242,12 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> triggerBackfill(
             @RequestParam String symbol,
             @RequestParam(defaultValue = "1m") String timeframe,
-            @RequestParam(defaultValue = "30") int days) {
+            @RequestParam(defaultValue = "30") int days,
+            HttpServletRequest request) {
         int filled = autoBackfillService.backfillIfNeeded(symbol, timeframe, days);
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "TRIGGER_BACKFILL",
+                "symbol=" + symbol + ",timeframe=" + timeframe + ",days=" + days + ",filled=" + filled);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "symbol", symbol,
@@ -261,8 +304,11 @@ public class AdminController {
      */
     @PostMapping("/risk/kill-switch")
     public ResponseEntity<Map<String, Object>> activateKillSwitch(
-            @RequestParam(defaultValue = "HALT") KillSwitch.Mode mode) {
+            @RequestParam(defaultValue = "HALT") KillSwitch.Mode mode,
+            HttpServletRequest request) {
         killSwitch.activate(mode);
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "KILL_SWITCH_ACTIVATE", "mode=" + mode);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "active", killSwitch.isActive(),
@@ -274,8 +320,10 @@ public class AdminController {
      * 解除 KillSwitch，恢复正常交易。
      */
     @PostMapping("/risk/kill-switch/deactivate")
-    public ResponseEntity<Map<String, Object>> deactivateKillSwitch() {
+    public ResponseEntity<Map<String, Object>> deactivateKillSwitch(HttpServletRequest request) {
         killSwitch.deactivate();
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "KILL_SWITCH_DEACTIVATE", "");
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "active", false,
@@ -313,8 +361,12 @@ public class AdminController {
     @PostMapping("/configs/{versionId}/publish")
     public ResponseEntity<ConfigVersion> publishConfig(
             @PathVariable String versionId,
-            @RequestParam(defaultValue = "admin") String publishedBy) {
+            @RequestParam(defaultValue = "admin") String publishedBy,
+            HttpServletRequest request) {
         ConfigVersion published = configVersionService.publish(versionId, publishedBy);
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "PUBLISH_CONFIG",
+                "versionId=" + versionId + ",publishedBy=" + publishedBy);
         return ResponseEntity.ok(published);
     }
 
@@ -374,5 +426,13 @@ public class AdminController {
     @GetMapping("/observability/metrics")
     public ResponseEntity<MetricsSnapshot> getObservabilityMetrics() {
         return ResponseEntity.ok(systemMetrics.snapshot());
+    }
+
+    /**
+     * 从 request attribute 中获取当前操作人用户名。
+     */
+    private String getOperator(HttpServletRequest request) {
+        UserDO user = (UserDO) request.getAttribute("currentUser");
+        return user != null ? user.getUsername() : "unknown";
     }
 }
