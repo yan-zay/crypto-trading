@@ -10,6 +10,11 @@ import com.tj.crypto.admin.dto.OverviewDTO;
 import com.tj.crypto.admin.dto.RiskConfigDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
+import com.tj.crypto.observability.MetricsSnapshot;
+import com.tj.crypto.observability.SystemMetrics;
+import com.tj.crypto.observability.alert.AlertEvent;
+import com.tj.crypto.observability.alert.AlertRule;
+import com.tj.crypto.observability.alert.AlertService;
 import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.storage.service.AutoBackfillService;
 import com.tj.crypto.storage.service.CoverageReport;
@@ -21,6 +26,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,6 +51,8 @@ public class AdminController {
     private final DataCoverageService dataCoverageService;
     private final AutoBackfillService autoBackfillService;
     private final KillSwitch killSwitch;
+    private final AlertService alertService;
+    private final SystemMetrics systemMetrics;
 
     /**
      * 系统状态。
@@ -328,5 +336,43 @@ public class AdminController {
                     .orElse(ResponseEntity.notFound().build());
         }
         return ResponseEntity.ok(configVersionService.getActiveByType(type));
+    }
+
+    // ========== 告警与可观测性端点 ==========
+
+    /**
+     * 获取告警历史列表。
+     *
+     * @return 告警事件列表
+     */
+    @GetMapping("/alerts")
+    public ResponseEntity<List<AlertEvent>> getAlerts() {
+        return ResponseEntity.ok(alertService.getAlertHistory());
+    }
+
+    /**
+     * 添加告警规则。
+     *
+     * @param rule 告警规则
+     * @return 操作结果
+     */
+    @PostMapping("/alerts/rules")
+    public ResponseEntity<Map<String, Object>> addAlertRule(@RequestBody AlertRule rule) {
+        alertService.addRule(rule);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "rule", rule.name()
+        ));
+    }
+
+    /**
+     * 获取详细的可观测性指标。
+     * 包含事件延迟、策略耗时、队列深度、内存使用等。
+     *
+     * @return 指标快照
+     */
+    @GetMapping("/observability/metrics")
+    public ResponseEntity<MetricsSnapshot> getObservabilityMetrics() {
+        return ResponseEntity.ok(systemMetrics.snapshot());
     }
 }
