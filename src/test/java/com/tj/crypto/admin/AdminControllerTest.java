@@ -9,6 +9,8 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
+import com.tj.crypto.storage.service.AutoBackfillService;
+import com.tj.crypto.storage.service.DataCoverageService;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
@@ -37,13 +39,18 @@ class AdminControllerTest {
     private MockMvc mockMvc;
     private AdminService adminService;
     private StrategyManager strategyManager;
+    private DataCoverageService dataCoverageService;
+    private AutoBackfillService autoBackfillService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
         adminService = mock(AdminService.class);
         strategyManager = mock(StrategyManager.class);
-        AdminController controller = new AdminController(adminService, strategyManager);
+        dataCoverageService = mock(DataCoverageService.class);
+        autoBackfillService = mock(AutoBackfillService.class);
+        AdminController controller = new AdminController(adminService, strategyManager,
+                dataCoverageService, autoBackfillService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

@@ -3,6 +3,9 @@ package com.tj.crypto.admin;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
+import com.tj.crypto.storage.service.AutoBackfillService;
+import com.tj.crypto.storage.service.CoverageReport;
+import com.tj.crypto.storage.service.DataCoverageService;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.StrategyManager;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +32,8 @@ public class AdminController {
 
     private final AdminService adminService;
     private final StrategyManager strategyManager;
+    private final DataCoverageService dataCoverageService;
+    private final AutoBackfillService autoBackfillService;
 
     /**
      * 系统状态。
@@ -146,5 +152,46 @@ public class AdminController {
                         "success", false,
                         "error", "Unknown strategy: " + name
                 )));
+    }
+
+    /**
+     * 查询数据覆盖率。
+     *
+     * @param symbol    交易对符号，如 "BTCUSDT"
+     * @param timeframe 时间周期，如 "1m", "5m"
+     * @param days      回溯天数，默认 30
+     */
+    @GetMapping("/coverage")
+    public ResponseEntity<CoverageReport> getCoverage(
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "1m") String timeframe,
+            @RequestParam(defaultValue = "30") int days) {
+        long now = System.currentTimeMillis();
+        long from = now - Duration.ofDays(days).toMillis();
+        CoverageReport report = dataCoverageService.checkCoverage(symbol, timeframe, from, now);
+        return ResponseEntity.ok(report);
+    }
+
+    /**
+     * 触发数据回填。
+     * 当覆盖率低于 95% 时自动从 Binance 拉取缺失的 K 线数据。
+     *
+     * @param symbol    交易对符号，如 "BTCUSDT"
+     * @param timeframe 时间周期，如 "1m", "5m"
+     * @param days      回溯天数，默认 30
+     */
+    @PostMapping("/backfill")
+    public ResponseEntity<Map<String, Object>> triggerBackfill(
+            @RequestParam String symbol,
+            @RequestParam(defaultValue = "1m") String timeframe,
+            @RequestParam(defaultValue = "30") int days) {
+        int filled = autoBackfillService.backfillIfNeeded(symbol, timeframe, days);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "symbol", symbol,
+                "timeframe", timeframe,
+                "days", days,
+                "barsFilled", filled
+        ));
     }
 }
