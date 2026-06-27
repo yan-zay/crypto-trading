@@ -2,6 +2,7 @@ package com.tj.crypto.admin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tj.crypto.admin.application.AdminOverviewService;
+import com.tj.crypto.admin.application.ConfigVersionService;
 import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.OverviewDTO;
@@ -43,6 +44,7 @@ class AdminControllerTest {
     private MockMvc mockMvc;
     private AdminService adminService;
     private AdminOverviewService adminOverviewService;
+    private ConfigVersionService configVersionService;
     private StrategyManager strategyManager;
     private DataCoverageService dataCoverageService;
     private AutoBackfillService autoBackfillService;
@@ -52,11 +54,12 @@ class AdminControllerTest {
     void setUp() {
         adminService = mock(AdminService.class);
         adminOverviewService = mock(AdminOverviewService.class);
+        configVersionService = mock(ConfigVersionService.class);
         strategyManager = mock(StrategyManager.class);
         dataCoverageService = mock(DataCoverageService.class);
         autoBackfillService = mock(AutoBackfillService.class);
         AdminController controller = new AdminController(adminService, adminOverviewService,
-                strategyManager, dataCoverageService, autoBackfillService);
+                configVersionService, strategyManager, dataCoverageService, autoBackfillService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

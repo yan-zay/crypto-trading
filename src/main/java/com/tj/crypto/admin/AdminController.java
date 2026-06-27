@@ -1,6 +1,9 @@
 package com.tj.crypto.admin;
 
 import com.tj.crypto.admin.application.AdminOverviewService;
+import com.tj.crypto.admin.application.ConfigVersionService;
+import com.tj.crypto.admin.domain.ConfigType;
+import com.tj.crypto.admin.domain.ConfigVersion;
 import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.OverviewDTO;
@@ -36,6 +39,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final AdminOverviewService adminOverviewService;
+    private final ConfigVersionService configVersionService;
     private final StrategyManager strategyManager;
     private final DataCoverageService dataCoverageService;
     private final AutoBackfillService autoBackfillService;
@@ -225,5 +229,60 @@ public class AdminController {
     @GetMapping("/risk/configs")
     public ResponseEntity<RiskConfigDTO> getRiskConfigs() {
         return ResponseEntity.ok(adminOverviewService.getRiskConfig());
+    }
+
+    // ========== 配置版本管理端点 ==========
+
+    /**
+     * 创建配置草稿。
+     *
+     * @param type        配置类型（CONNECTOR, FACTOR, STRATEGY, RISK, EXECUTION）
+     * @param configKey   配置键（如策略名、因子名）
+     * @param contentJson 配置内容 JSON
+     * @param remark      备注说明
+     */
+    @PostMapping("/configs/draft")
+    public ResponseEntity<ConfigVersion> createDraft(
+            @RequestParam ConfigType type,
+            @RequestParam String configKey,
+            @RequestParam String contentJson,
+            @RequestParam(required = false, defaultValue = "") String remark) {
+        ConfigVersion draft = configVersionService.createDraft(type, configKey, contentJson, remark);
+        return ResponseEntity.ok(draft);
+    }
+
+    /**
+     * 发布配置版本。
+     * 前置条件：版本必须处于 VALIDATED 状态。
+     *
+     * @param versionId   版本 ID
+     * @param publishedBy 发布人
+     */
+    @PostMapping("/configs/{versionId}/publish")
+    public ResponseEntity<ConfigVersion> publishConfig(
+            @PathVariable String versionId,
+            @RequestParam(defaultValue = "admin") String publishedBy) {
+        ConfigVersion published = configVersionService.publish(versionId, publishedBy);
+        return ResponseEntity.ok(published);
+    }
+
+    /**
+     * 查询配置。
+     * 如果指定 type 和 configKey，返回当前生效版本；
+     * 如果只指定 type，返回该类型下所有生效版本。
+     *
+     * @param type      配置类型
+     * @param configKey 配置键（可选）
+     */
+    @GetMapping("/configs")
+    public ResponseEntity<?> getConfigs(
+            @RequestParam ConfigType type,
+            @RequestParam(required = false) String configKey) {
+        if (configKey != null && !configKey.isBlank()) {
+            return configVersionService.getActive(type, configKey)
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.notFound().build());
+        }
+        return ResponseEntity.ok(configVersionService.getActiveByType(type));
     }
 }
