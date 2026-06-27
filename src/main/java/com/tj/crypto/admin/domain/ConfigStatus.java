@@ -21,4 +21,16 @@ public enum ConfigStatus {
 
     private final String code;
     private final String displayName;
+
+    /**
+     * 根据 code 查找枚举值。
+     */
+    public static ConfigStatus fromCode(String code) {
+        for (ConfigStatus status : values()) {
+            if (status.code.equals(code)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("Unknown ConfigStatus code: " + code);
+    }
 }

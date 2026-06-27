@@ -1,205 +1,267 @@
 package com.tj.crypto.admin.application;
 
+import com.tj.crypto.admin.domain.AuditLogDO;
 import com.tj.crypto.admin.domain.ConfigStatus;
 import com.tj.crypto.admin.domain.ConfigType;
 import com.tj.crypto.admin.domain.ConfigVersion;
-import com.tj.crypto.admin.service.InMemoryConfigRepository;
-import lombok.RequiredArgsConstructor;
+import com.tj.crypto.admin.domain.ConfigVersionDO;
+import com.tj.crypto.admin.mapper.AuditLogMapper;
+import com.tj.crypto.admin.mapper.ConfigVersionMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
  * 配置版本管理服务。
  * 提供配置的完整生命周期管理：Draft → Validated → Published → Active → RolledBack。
- * 所有状态变更产生新的 ConfigVersion 实例（不可变模式）。
+ * 使用 MySQL 持久化，每次状态变更记录审计日志。
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ConfigVersionService {
 
-    private final InMemoryConfigRepository repository;
+    private final ConfigVersionMapper configVersionMapper;
+    private final AuditLogMapper auditLogMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
-    /**
-     * 创建草稿版本。
-     *
-     * @param type        配置类型
-     * @param configKey   配置键
-     * @param contentJson 配置内容（JSON 字符串）
-     * @param remark      备注说明
-     * @return 新创建的草稿版本
-     */
-    public ConfigVersion createDraft(ConfigType type, String configKey, String contentJson, String remark) {
-        Instant now = Instant.now();
-        ConfigVersion draft = new ConfigVersion(
-                generateVersionId(),
-                type,
-                configKey,
-                contentJson,
-                ConfigStatus.DRAFT,
-                remark,
-                null,
-                now,
-                now
-        );
-        repository.save(draft);
-        log.info("Created draft config version: type={}, key={}, versionId={}",
-                type, configKey, draft.versionId());
-        return draft;
+    public ConfigVersionService(ConfigVersionMapper configVersionMapper,
+                                AuditLogMapper auditLogMapper,
+                                ApplicationEventPublisher eventPublisher) {
+        this.configVersionMapper = configVersionMapper;
+        this.auditLogMapper = auditLogMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
-     * 验证配置版本。
-     * 状态从 DRAFT 变为 VALIDATED。只有 DRAFT 状态的版本可以被验证。
-     *
-     * @param versionId 版本 ID
-     * @return 验证后的版本
-     * @throws IllegalArgumentException 版本不存在或状态不允许验证
+     * 创建草稿版本。
+     */
+    public ConfigVersion createDraft(ConfigType type, String configKey, String contentJson, String remark) {
+        Instant now = Instant.now();
+        String versionId = generateVersionId();
+
+        ConfigVersionDO entity = new ConfigVersionDO();
+        entity.setConfigType(type.getCode());
+        entity.setConfigKey(configKey);
+        entity.setVersionId(versionId);
+        entity.setStatus(ConfigStatus.DRAFT.getCode());
+        entity.setContentJson(contentJson);
+        entity.setChecksum(computeChecksum(contentJson));
+        entity.setCreatedBy("system");
+        entity.setRemark(remark);
+        entity.setCreateTime(Date.from(now));
+        entity.setUpdateTime(Date.from(now));
+        configVersionMapper.insert(entity);
+
+        recordAudit("CREATE", type, configKey, versionId, "system", "Created draft config");
+
+        log.info("Created draft config version: type={}, key={}, versionId={}", type, configKey, versionId);
+        return toRecord(entity);
+    }
+
+    /**
+     * 验证配置版本。状态从 DRAFT 变为 VALIDATED。
      */
     public ConfigVersion validate(String versionId) {
-        ConfigVersion current = getVersionOrThrow(versionId);
+        ConfigVersionDO current = getVersionOrThrow(versionId);
         assertStatus(current, ConfigStatus.DRAFT, "validate");
 
-        ConfigVersion validated = current.withStatus(ConfigStatus.VALIDATED);
-        repository.save(validated);
+        current.setStatus(ConfigStatus.VALIDATED.getCode());
+        current.setUpdateTime(new Date());
+        configVersionMapper.updateById(current);
+
+        recordAudit("VALIDATE", ConfigType.fromCode(current.getConfigType()),
+                current.getConfigKey(), versionId, "system", "Validated config version");
+
         log.info("Validated config version: versionId={}", versionId);
-        return validated;
+        return toRecord(current);
     }
 
     /**
      * 发布配置版本。
      * 状态从 VALIDATED 变为 PUBLISHED，然后自动变为 ACTIVE。
      * 如果已有 ACTIVE 版本，旧版本自动变为 ARCHIVED。
-     *
-     * @param versionId   版本 ID
-     * @param publishedBy 发布人
-     * @return 发布后生效的版本
-     * @throws IllegalArgumentException 版本不存在或状态不允许发布
+     * 发布后触发 ConfigPublishedEvent 事件，同步运行态。
      */
     public ConfigVersion publish(String versionId, String publishedBy) {
-        ConfigVersion current = getVersionOrThrow(versionId);
+        ConfigVersionDO current = getVersionOrThrow(versionId);
         assertStatus(current, ConfigStatus.VALIDATED, "publish");
 
         // 归档旧的 ACTIVE 版本
-        repository.findActive(current.type(), current.configKey())
+        configVersionMapper.selectActiveByTypeAndKey(current.getConfigType(), current.getConfigKey())
                 .ifPresent(oldActive -> {
-                    ConfigVersion archived = oldActive.withStatus(ConfigStatus.ARCHIVED);
-                    repository.save(archived);
-                    log.info("Archived previous active version: versionId={}", oldActive.versionId());
+                    oldActive.setStatus(ConfigStatus.ARCHIVED.getCode());
+                    oldActive.setUpdateTime(new Date());
+                    configVersionMapper.updateById(oldActive);
+                    log.info("Archived previous active version: versionId={}", oldActive.getVersionId());
                 });
 
-        // 发布并激活
-        ConfigVersion published = current
-                .withStatus(ConfigStatus.PUBLISHED)
-                .withPublishedBy(publishedBy);
-        repository.save(published);
+        // 发布
+        current.setStatus(ConfigStatus.PUBLISHED.getCode());
+        current.setPublishedBy(publishedBy);
+        current.setPublishedTime(new Date());
+        current.setUpdateTime(new Date());
+        configVersionMapper.updateById(current);
 
-        ConfigVersion active = published.withStatus(ConfigStatus.ACTIVE);
-        repository.save(active);
+        // 激活
+        current.setStatus(ConfigStatus.ACTIVE.getCode());
+        current.setUpdateTime(new Date());
+        configVersionMapper.updateById(current);
 
-        log.info("Published and activated config version: versionId={}, publishedBy={}",
-                versionId, publishedBy);
-        return active;
+        recordAudit("PUBLISH", ConfigType.fromCode(current.getConfigType()),
+                current.getConfigKey(), versionId, publishedBy, "Published and activated config");
+
+        log.info("Published and activated config version: versionId={}, publishedBy={}", versionId, publishedBy);
+
+        // 触发运行态同步
+        eventPublisher.publishEvent(new ConfigPublishedEvent(
+                this, ConfigType.fromCode(current.getConfigType()), current.getConfigKey()));
+
+        return toRecord(current);
     }
 
     /**
      * 回滚到指定的目标版本。
-     * 目标版本必须是之前 ACTIVE 或 PUBLISHED 状态的历史版本。
-     * 当前 ACTIVE 版本变为 ROLLED_BACK，目标版本重新变为 ACTIVE。
-     *
-     * @param currentVersionId 当前版本 ID（用于定位配置项）
-     * @param targetVersionId  要回滚到的目标版本 ID
-     * @return 回滚后重新生效的版本
-     * @throws IllegalArgumentException 版本不存在或状态不允许回滚
      */
     public ConfigVersion rollback(String currentVersionId, String targetVersionId) {
-        ConfigVersion current = getVersionOrThrow(currentVersionId);
-        ConfigVersion target = getVersionOrThrow(targetVersionId);
+        ConfigVersionDO current = getVersionOrThrow(currentVersionId);
+        ConfigVersionDO target = getVersionOrThrow(targetVersionId);
 
-        // 验证 target 是同一配置项的历史版本
-        if (current.type() != target.type() || !current.configKey().equals(target.configKey())) {
+        if (!current.getConfigType().equals(target.getConfigType())
+                || !current.getConfigKey().equals(target.getConfigKey())) {
             throw new IllegalArgumentException(
                     "Target version belongs to a different config: current=%s:%s, target=%s:%s"
-                            .formatted(current.type(), current.configKey(), target.type(), target.configKey()));
+                            .formatted(current.getConfigType(), current.getConfigKey(),
+                                    target.getConfigType(), target.getConfigKey()));
         }
 
-        // 归档或回滚当前 ACTIVE 版本
-        repository.findActive(current.type(), current.configKey())
+        // 回滚当前 ACTIVE 版本
+        configVersionMapper.selectActiveByTypeAndKey(current.getConfigType(), current.getConfigKey())
                 .ifPresent(active -> {
-                    ConfigVersion rolledBack = active.withStatus(ConfigStatus.ROLLED_BACK);
-                    repository.save(rolledBack);
-                    log.info("Rolled back active version: versionId={}", active.versionId());
+                    active.setStatus(ConfigStatus.ROLLED_BACK.getCode());
+                    active.setUpdateTime(new Date());
+                    configVersionMapper.updateById(active);
+                    log.info("Rolled back active version: versionId={}", active.getVersionId());
                 });
 
-        // 将目标版本重新激活
-        ConfigVersion reactivated = target.withStatus(ConfigStatus.ACTIVE);
-        repository.save(reactivated);
+        // 重新激活目标版本
+        target.setStatus(ConfigStatus.ACTIVE.getCode());
+        target.setUpdateTime(new Date());
+        configVersionMapper.updateById(target);
+
+        recordAudit("ROLLBACK", ConfigType.fromCode(current.getConfigType()),
+                current.getConfigKey(), targetVersionId, "system",
+                "Rolled back from %s to %s".formatted(currentVersionId, targetVersionId));
 
         log.info("Rollback complete: target versionId={} is now ACTIVE", targetVersionId);
-        return reactivated;
+
+        // 触发运行态同步
+        eventPublisher.publishEvent(new ConfigPublishedEvent(
+                this, ConfigType.fromCode(current.getConfigType()), current.getConfigKey()));
+
+        return toRecord(target);
     }
 
     /**
      * 获取某配置项的当前生效版本。
-     *
-     * @param type      配置类型
-     * @param configKey 配置键
-     * @return 当前生效版本（可能为空）
      */
-    public java.util.Optional<ConfigVersion> getActive(ConfigType type, String configKey) {
-        return repository.findActive(type, configKey);
+    public Optional<ConfigVersion> getActive(ConfigType type, String configKey) {
+        return configVersionMapper.selectActiveByTypeAndKey(type.getCode(), configKey)
+                .map(this::toRecord);
     }
 
     /**
      * 获取某配置项的全部版本历史。
-     *
-     * @param type      配置类型
-     * @param configKey 配置键
-     * @return 版本列表，按创建时间升序
      */
     public List<ConfigVersion> getHistory(ConfigType type, String configKey) {
-        return repository.findHistory(type, configKey);
+        return configVersionMapper.selectHistoryByTypeAndKey(type.getCode(), configKey)
+                .stream()
+                .map(this::toRecord)
+                .toList();
     }
 
     /**
      * 获取指定类型下所有当前生效的配置版本。
-     *
-     * @param type 配置类型
-     * @return 该类型下所有生效版本
      */
     public List<ConfigVersion> getActiveByType(ConfigType type) {
-        return repository.findActiveByType(type);
+        return configVersionMapper.selectActiveByType(type.getCode())
+                .stream()
+                .map(this::toRecord)
+                .toList();
     }
 
     /**
      * 按 versionId 获取版本详情。
-     *
-     * @param versionId 版本 ID
-     * @return 版本详情
-     * @throws IllegalArgumentException 版本不存在
      */
     public ConfigVersion getVersion(String versionId) {
-        return getVersionOrThrow(versionId);
+        return toRecord(getVersionOrThrow(versionId));
     }
 
-    private ConfigVersion getVersionOrThrow(String versionId) {
-        return repository.findById(versionId)
+    // ========== 内部方法 ==========
+
+    private ConfigVersionDO getVersionOrThrow(String versionId) {
+        return configVersionMapper.selectByVersionId(versionId)
                 .orElseThrow(() -> new IllegalArgumentException("Config version not found: " + versionId));
     }
 
-    private void assertStatus(ConfigVersion version, ConfigStatus expected, String operation) {
-        if (version.status() != expected) {
+    private void assertStatus(ConfigVersionDO version, ConfigStatus expected, String operation) {
+        if (!expected.getCode().equals(version.getStatus())) {
             throw new IllegalArgumentException(
                     "Cannot %s version in state %s: versionId=%s"
-                            .formatted(operation, version.status(), version.versionId()));
+                            .formatted(operation, version.getStatus(), version.getVersionId()));
         }
+    }
+
+    private ConfigVersion toRecord(ConfigVersionDO entity) {
+        return new ConfigVersion(
+                entity.getVersionId(),
+                ConfigType.fromCode(entity.getConfigType()),
+                entity.getConfigKey(),
+                entity.getContentJson(),
+                ConfigStatus.fromCode(entity.getStatus()),
+                entity.getRemark(),
+                entity.getPublishedBy(),
+                entity.getCreateTime() != null ? entity.getCreateTime().toInstant() : null,
+                entity.getUpdateTime() != null ? entity.getUpdateTime().toInstant() : null
+        );
     }
 
     private String generateVersionId() {
         return "cv-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String computeChecksum(String content) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(content.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    private void recordAudit(String operationType, ConfigType configType, String configKey,
+                             String versionId, String operator, String detail) {
+        AuditLogDO auditLog = new AuditLogDO();
+        auditLog.setOperationType(operationType);
+        auditLog.setConfigType(configType.getCode());
+        auditLog.setConfigKey(configKey);
+        auditLog.setVersionId(versionId);
+        auditLog.setOperator(operator);
+        auditLog.setOperationTime(new Date());
+        auditLog.setDetail(detail);
+        auditLogMapper.insert(auditLog);
     }
 }

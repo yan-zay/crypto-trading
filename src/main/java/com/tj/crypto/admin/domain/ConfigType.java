@@ -20,4 +20,16 @@ public enum ConfigType {
 
     private final String code;
     private final String displayName;
+
+    /**
+     * 根据 code 查找枚举值。
+     */
+    public static ConfigType fromCode(String code) {
+        for (ConfigType type : values()) {
+            if (type.code.equals(code)) {
+                return type;
+            }
+        }
+        throw new IllegalArgumentException("Unknown ConfigType code: " + code);
+    }
 }

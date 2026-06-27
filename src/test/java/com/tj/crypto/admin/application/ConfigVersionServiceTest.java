@@ -1,29 +1,107 @@
 package com.tj.crypto.admin.application;
 
+import com.tj.crypto.admin.domain.AuditLogDO;
 import com.tj.crypto.admin.domain.ConfigStatus;
 import com.tj.crypto.admin.domain.ConfigType;
 import com.tj.crypto.admin.domain.ConfigVersion;
-import com.tj.crypto.admin.service.InMemoryConfigRepository;
+import com.tj.crypto.admin.domain.ConfigVersionDO;
+import com.tj.crypto.admin.mapper.AuditLogMapper;
+import com.tj.crypto.admin.mapper.ConfigVersionMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ConfigVersionServiceTest {
 
-    private InMemoryConfigRepository repository;
+    private ConfigVersionMapper configVersionMapper;
+    private AuditLogMapper auditLogMapper;
+    private ApplicationEventPublisher eventPublisher;
     private ConfigVersionService service;
 
+    /** 模拟数据库：versionId -> ConfigVersionDO */
+    private final Map<String, ConfigVersionDO> db = new ConcurrentHashMap<>();
+    private final AtomicLong idSeq = new AtomicLong(1);
+
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
-        repository = new InMemoryConfigRepository();
-        service = new ConfigVersionService(repository);
+        configVersionMapper = mock(ConfigVersionMapper.class);
+        auditLogMapper = mock(AuditLogMapper.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
+        service = new ConfigVersionService(configVersionMapper, auditLogMapper, eventPublisher);
+        db.clear();
+        idSeq.set(1);
+
+        // insert: 分配 ID，存入 db
+        when(configVersionMapper.insert(any(ConfigVersionDO.class))).thenAnswer(invocation -> {
+            ConfigVersionDO entity = invocation.getArgument(0);
+            entity.setId(idSeq.getAndIncrement());
+            db.put(entity.getVersionId(), entity);
+            return 1;
+        });
+
+        // updateById: no-op（实体已通过引用被修改）
+        when(configVersionMapper.updateById(any(ConfigVersionDO.class))).thenReturn(1);
+
+        // selectByVersionId: 从 db 返回
+        when(configVersionMapper.selectByVersionId(any())).thenAnswer(invocation -> {
+            String versionId = invocation.getArgument(0);
+            return Optional.ofNullable(db.get(versionId));
+        });
+
+        // selectActiveByTypeAndKey: 查找 ACTIVE 状态
+        when(configVersionMapper.selectActiveByTypeAndKey(any(), any())).thenAnswer(invocation -> {
+            String type = invocation.getArgument(0);
+            String key = invocation.getArgument(1);
+            return db.values().stream()
+                    .filter(e -> type.equals(e.getConfigType())
+                            && key.equals(e.getConfigKey())
+                            && "active".equals(e.getStatus()))
+                    .findFirst();
+        });
+
+        // selectHistoryByTypeAndKey
+        when(configVersionMapper.selectHistoryByTypeAndKey(any(), any())).thenAnswer(invocation -> {
+            String type = invocation.getArgument(0);
+            String key = invocation.getArgument(1);
+            return db.values().stream()
+                    .filter(e -> type.equals(e.getConfigType()) && key.equals(e.getConfigKey()))
+                    .sorted((a, b) -> a.getCreateTime().compareTo(b.getCreateTime()))
+                    .toList();
+        });
+
+        // selectActiveByType
+        when(configVersionMapper.selectActiveByType(any())).thenAnswer(invocation -> {
+            String type = invocation.getArgument(0);
+            return db.values().stream()
+                    .filter(e -> type.equals(e.getConfigType()) && "active".equals(e.getStatus()))
+                    .toList();
+        });
+
+        // auditLogMapper.insert: no-op
+        when(auditLogMapper.insert(any(AuditLogDO.class))).thenReturn(1);
+
+        // eventPublisher: no-op
+        doNothing().when(eventPublisher).publishEvent(any());
     }
 
     @Nested
@@ -59,6 +137,19 @@ class ConfigVersionServiceTest {
             List<ConfigVersion> history = service.getHistory(ConfigType.STRATEGY, "MacdCross");
             assertThat(history).hasSize(2);
         }
+
+        @Test
+        @DisplayName("创建草稿时记录审计日志")
+        void shouldRecordAuditLogOnCreate() {
+            service.createDraft(ConfigType.STRATEGY, "MacdCross", "{}", "test");
+
+            ArgumentCaptor<AuditLogDO> captor = ArgumentCaptor.forClass(AuditLogDO.class);
+            verify(auditLogMapper).insert(captor.capture());
+            AuditLogDO auditLog = captor.getValue();
+            assertThat(auditLog.getOperationType()).isEqualTo("CREATE");
+            assertThat(auditLog.getConfigType()).isEqualTo("strategy");
+            assertThat(auditLog.getConfigKey()).isEqualTo("MacdCross");
+        }
     }
 
     @Nested
@@ -87,7 +178,7 @@ class ConfigVersionServiceTest {
             assertThatThrownBy(() -> service.validate(validated.versionId()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("validate")
-                    .hasMessageContaining("VALIDATED");
+                    .hasMessageContaining("validated");
         }
 
         @Test
@@ -153,7 +244,22 @@ class ConfigVersionServiceTest {
             assertThatThrownBy(() -> service.publish(draft.versionId(), "admin"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("publish")
-                    .hasMessageContaining("DRAFT");
+                    .hasMessageContaining("draft");
+        }
+
+        @Test
+        @DisplayName("发布后触发 ConfigPublishedEvent")
+        void shouldPublishEventAfterPublish() {
+            ConfigVersion draft = service.createDraft(
+                    ConfigType.STRATEGY, "MacdCross", "{}", "");
+            service.validate(draft.versionId());
+            service.publish(draft.versionId(), "admin");
+
+            ArgumentCaptor<ConfigPublishedEvent> captor = ArgumentCaptor.forClass(ConfigPublishedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            ConfigPublishedEvent event = captor.getValue();
+            assertThat(event.getConfigType()).isEqualTo(ConfigType.STRATEGY);
+            assertThat(event.getConfigKey()).isEqualTo("MacdCross");
         }
     }
 
@@ -184,7 +290,6 @@ class ConfigVersionServiceTest {
             assertThat(rolledBack.versionId()).isEqualTo(active1.versionId());
 
             // 验证第二个版本变为 ROLLED_BACK
-            // 注意：draft2 的 ACTIVE 版本已回滚
             List<ConfigVersion> history = service.getHistory(ConfigType.STRATEGY, "MacdCross");
             boolean hasRolledBack = history.stream()
                     .anyMatch(v -> v.status() == ConfigStatus.ROLLED_BACK);
@@ -221,7 +326,7 @@ class ConfigVersionServiceTest {
         void shouldReturnHistoryInOrder() throws InterruptedException {
             ConfigVersion draft1 = service.createDraft(
                     ConfigType.STRATEGY, "MacdCross", "{\"v\":1}", "v1");
-            Thread.sleep(10); // 确保时间戳不同
+            Thread.sleep(10);
             ConfigVersion draft2 = service.createDraft(
                     ConfigType.STRATEGY, "MacdCross", "{\"v\":2}", "v2");
 
@@ -234,7 +339,6 @@ class ConfigVersionServiceTest {
         @Test
         @DisplayName("getActiveByType 返回指定类型下所有生效版本")
         void shouldReturnActiveByType() {
-            // 创建两个不同 key 的配置并发布
             ConfigVersion d1 = service.createDraft(ConfigType.STRATEGY, "MacdCross", "{}", "");
             service.validate(d1.versionId());
             service.publish(d1.versionId(), "admin");
