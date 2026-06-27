@@ -8,6 +8,7 @@ import Factors from './pages/Factors';
 import Risk from './pages/Risk';
 import Signals from './pages/Signals';
 import Backtests from './pages/Backtests';
+import BacktestResult from './pages/BacktestResult';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,7 @@ export default function App() {
               <Route path="/risk" element={<Risk />} />
               <Route path="/signals" element={<Signals />} />
               <Route path="/backtests" element={<Backtests />} />
+              <Route path="/backtest-results" element={<BacktestResult />} />
             </Route>
           </Routes>
         </BrowserRouter>

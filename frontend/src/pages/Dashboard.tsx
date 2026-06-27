@@ -1,27 +1,40 @@
-import { Card, Col, Row, Statistic, Table, Tag, Typography } from 'antd';
+import { Card, Col, Row, Statistic, Table, Tag, Typography, Badge, List, Space, Tooltip } from 'antd';
 import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
   ClockCircleOutlined,
   ThunderboltOutlined,
   ExperimentOutlined,
   AlertOutlined,
   ApiOutlined,
   SafetyOutlined,
+  WarningOutlined,
+  InfoCircleOutlined,
+  ExclamationCircleOutlined,
+  FireOutlined,
+  CloudServerOutlined,
+  CodeOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { fetchOverview } from '../api/admin';
-import type { ConnectorStatusDTO } from '../types';
+import { fetchOverview, fetchAlerts } from '../api/admin';
+import type { ConnectorStatusDTO, AlertEvent } from '../types';
 
 function formatUptime(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
+
+const ALERT_LEVEL_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
+  INFO: { color: 'blue', icon: <InfoCircleOutlined /> },
+  WARN: { color: 'orange', icon: <WarningOutlined /> },
+  ERROR: { color: 'red', icon: <ExclamationCircleOutlined /> },
+  CRITICAL: { color: 'red', icon: <FireOutlined /> },
+};
 
 const connectorColumns = [
   {
@@ -34,16 +47,12 @@ const connectorColumns = [
     title: 'Status',
     dataIndex: 'connected',
     key: 'connected',
-    width: 100,
+    width: 120,
     render: (connected: boolean) =>
       connected ? (
-        <Tag icon={<CheckCircleOutlined />} color="success">
-          Connected
-        </Tag>
+        <Badge status="success" text={<Typography.Text type="success">Connected</Typography.Text>} />
       ) : (
-        <Tag icon={<CloseCircleOutlined />} color="error">
-          Disconnected
-        </Tag>
+        <Badge status="error" text={<Typography.Text type="danger">Disconnected</Typography.Text>} />
       ),
   },
   {
@@ -82,12 +91,22 @@ export default function Dashboard() {
     refetchInterval: 5000,
   });
 
+  const { data: alerts } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: () => fetchAlerts(10),
+    refetchInterval: 10000,
+  });
+
+  const connectedCount = data?.connectors?.filter((c) => c.connected).length ?? 0;
+  const totalCount = data?.connectors?.length ?? 0;
+
   return (
     <div>
       <Typography.Title level={4} style={{ marginBottom: 24 }}>
         System Overview
       </Typography.Title>
 
+      {/* System Status Row */}
       <Row gutter={[16, 16]}>
         <Col xs={12} sm={8} lg={4}>
           <Card size="small">
@@ -95,6 +114,24 @@ export default function Dashboard() {
               title="Uptime"
               value={data ? formatUptime(data.uptimeMs) : '-'}
               prefix={<ClockCircleOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Version"
+              value="1.0.0"
+              prefix={<CodeOutlined />}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={8} lg={4}>
+          <Card size="small">
+            <Statistic
+              title="Environment"
+              value="Dev"
+              prefix={<CloudServerOutlined />}
             />
           </Card>
         </Col>
@@ -118,17 +155,22 @@ export default function Dashboard() {
             <Statistic title="Signals" value={data?.totalSignalCount ?? 0} prefix={<AlertOutlined />} />
           </Card>
         </Col>
-        <Col xs={12} sm={8} lg={4}>
+      </Row>
+
+      {/* Event Throughput Row */}
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+        <Col xs={12} sm={6}>
           <Card size="small">
             <Statistic
-              title="Connectors"
-              value={data?.connectedConnectorCount ?? 0}
-              suffix={`/ ${data?.connectorCount ?? 0}`}
+              title="Connectors Online"
+              value={connectedCount}
+              suffix={`/ ${totalCount}`}
               prefix={<ApiOutlined />}
+              valueStyle={{ color: connectedCount === totalCount ? '#3f8600' : '#cf1322' }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} lg={4}>
+        <Col xs={12} sm={6}>
           <Card size="small">
             <Statistic
               title="Max Loss/Trade"
@@ -136,12 +178,50 @@ export default function Dashboard() {
               suffix="%"
               precision={2}
               prefix={<SafetyOutlined />}
+              valueStyle={{ color: '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Max Daily Loss"
+              value={data?.riskConfig?.maxDailyLossPct ?? 0}
+              suffix="%"
+              precision={2}
+              prefix={<SafetyOutlined />}
+              valueStyle={{ color: '#cf1322' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small">
+            <Statistic
+              title="Total Messages"
+              value={data?.connectors?.reduce((sum, c) => sum + c.messagesReceived, 0) ?? 0}
+              prefix={<ThunderboltOutlined />}
             />
           </Card>
         </Col>
       </Row>
 
-      <Card title="Connectors" size="small" style={{ marginTop: 16 }}>
+      {/* Connectors Table */}
+      <Card
+        title={
+          <Space>
+            <span>Connectors</span>
+            <Tooltip title="WebSocket connection status">
+              <Badge
+                count={totalCount - connectedCount}
+                showZero
+                style={{ backgroundColor: connectedCount === totalCount ? '#52c41a' : '#ff4d4f' }}
+              />
+            </Tooltip>
+          </Space>
+        }
+        size="small"
+        style={{ marginTop: 16 }}
+      >
         <Table<ConnectorStatusDTO>
           dataSource={data?.connectors ?? []}
           columns={connectorColumns}
@@ -149,6 +229,33 @@ export default function Dashboard() {
           loading={isLoading}
           size="small"
           pagination={false}
+        />
+      </Card>
+
+      {/* Recent Alerts */}
+      <Card title="Recent Alerts" size="small" style={{ marginTop: 16 }}>
+        <List<AlertEvent>
+          dataSource={alerts ?? []}
+          loading={!alerts}
+          size="small"
+          locale={{ emptyText: 'No alerts' }}
+          renderItem={(item) => {
+            const config = ALERT_LEVEL_CONFIG[item.level] ?? ALERT_LEVEL_CONFIG.INFO;
+            return (
+              <List.Item>
+                <Space>
+                  <Tag color={config.color} icon={config.icon}>
+                    {item.level}
+                  </Tag>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {new Date(item.timestamp).toLocaleString()}
+                  </Typography.Text>
+                  <Typography.Text>[{item.source}]</Typography.Text>
+                  <Typography.Text>{item.message}</Typography.Text>
+                </Space>
+              </List.Item>
+            );
+          }}
         />
       </Card>
     </div>

@@ -94,3 +94,55 @@ export interface CoverageReport {
   coveragePct: number;
   gaps: Array<{ from: number; to: number }>;
 }
+
+/** Alert event */
+export interface AlertEvent {
+  level: 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL';
+  source: string;
+  message: string;
+  timestamp: number;
+}
+
+/** Strategy detail with recent signals */
+export interface StrategyDetailDTO {
+  name: string;
+  enabled: boolean;
+  listenedEvents: string[];
+  recentSignals: SignalEvent[];
+}
+
+/** Backtest result summary */
+export interface BacktestResultDTO {
+  id: string;
+  strategyName: string;
+  symbol: string;
+  timeframe: string;
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  finalCapital: number;
+  totalReturnPct: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  sharpeRatio: number;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  avgWinPct: number;
+  avgLossPct: number;
+  profitFactor: number;
+  trades: BacktestTradeDTO[];
+}
+
+/** Individual backtest trade */
+export interface BacktestTradeDTO {
+  entryTime: number;
+  exitTime: number;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  exitPrice: number;
+  quantity: number;
+  pnl: number;
+  pnlPct: number;
+  fees: number;
+}

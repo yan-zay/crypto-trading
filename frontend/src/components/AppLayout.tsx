@@ -9,6 +9,7 @@ import {
   BarChartOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -23,6 +24,7 @@ const menuItems = [
   { key: '/risk', icon: <SafetyOutlined />, label: 'Risk' },
   { key: '/signals', icon: <AlertOutlined />, label: 'Signals' },
   { key: '/backtests', icon: <BarChartOutlined />, label: 'Backtests' },
+  { key: '/backtest-results', icon: <LineChartOutlined />, label: 'Backtest Results' },
 ];
 
 export default function AppLayout() {
