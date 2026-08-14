@@ -1,4 +1,4 @@
-import { Card, Col, Row, Statistic, Button, Space, Typography, message, Popconfirm, Descriptions, Divider, Badge } from 'antd';
+import { Card, Col, Row, Statistic, Button, Space, Typography, Popconfirm, Descriptions, Divider, Badge } from 'antd';
 import {
   WarningOutlined,
   StopOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchRiskConfigs, fetchKillSwitch, activateKillSwitch, deactivateKillSwitch } from '../api/admin';
+import { notify } from '../feedback/notify';
 
 const MODE_CONFIG = {
   HALT: {
@@ -49,19 +50,19 @@ export default function Risk() {
   const activateMutation = useMutation({
     mutationFn: (mode: 'HALT' | 'CLOSE_ONLY') => activateKillSwitch(mode),
     onSuccess: () => {
-      message.warning('KillSwitch activated');
+      notify.warning('KillSwitch activated');
       queryClient.invalidateQueries({ queryKey: ['kill-switch'] });
     },
-    onError: () => message.error('Failed to activate KillSwitch'),
+    onError: () => notify.error('Failed to activate KillSwitch'),
   });
 
   const deactivateMutation = useMutation({
     mutationFn: deactivateKillSwitch,
     onSuccess: () => {
-      message.success('KillSwitch deactivated — normal trading resumed');
+      notify.success('KillSwitch deactivated — normal trading resumed');
       queryClient.invalidateQueries({ queryKey: ['kill-switch'] });
     },
-    onError: () => message.error('Failed to deactivate KillSwitch'),
+    onError: () => notify.error('Failed to deactivate KillSwitch'),
   });
 
   const currentMode = ks?.active ? ks.mode : 'NORMAL';
