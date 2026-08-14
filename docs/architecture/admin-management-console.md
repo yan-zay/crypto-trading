@@ -6,6 +6,8 @@
 
 本系统后续所有可变参数都应逐步从硬编码和静态 `application.yml` 迁移到“版本化配置中心”。后台页面只是入口，真正重要的是后端配置模型、校验规则、生效流程和运行态一致性。
 
+当前已经落地 React 管理控制台、认证/RBAC、总览、策略/因子、风控、信号、OMS/配置、单/多因子回测、持久异步回测任务、完整结果/研究质量报告、Trading Operations 和 Reliability & Audit。模拟交易页面已覆盖账户、下单/撤单、订单、成交、持仓/余额、权益、归因、TCA、账本和对账。本文件同时保留目标架构；未实现条目必须继续标为规划，不能根据页面存在就推断真实交易所认证或生产安全已经完成。
+
 ## 建设原则
 
 - 先做配置治理，再做漂亮页面。没有版本、校验、审计和回滚的后台会放大交易风险。
@@ -13,7 +15,7 @@
 - 所有高风险操作必须可追踪：谁改了什么、为什么改、何时发布、影响哪些策略、是否可以回滚。
 - UI 不直接写业务状态。UI 调用后端 API，后端通过领域服务完成校验、发布和事件通知。
 - 密钥不落普通配置表，不在前端回显明文。后台只管理 secret 引用和连通性检测。
-- 管理后台第一阶段默认只支持只读和模拟交易控制，实盘下单能力必须等风控、执行、权限、审计成熟后再开放。
+- 实盘适配 API 必须默认禁用；只有交易所认证、凭据治理、HA/fencing、长期演练和审批门禁全部通过后，后台才允许切换到真实资金写模式。
 
 ## 推荐技术栈
 
@@ -29,10 +31,7 @@
 
 ### 前端
 
-可选方案有两个，建议优先选方案 A：
-
-- 方案 A：React + TypeScript + Vite + TanStack Query + Zustand + Ant Design Pro 或 Arco Design。
-- 方案 B：Vue 3 + TypeScript + Vite + Pinia + Vue Query + Naive UI 或 Arco Design Vue。
+当前方案：React 19 + TypeScript 6 + Vite 8 + TanStack Query + Ant Design 6。权益曲线使用 Apache ECharts 6 按需加载。新增页面应延续该技术栈，不再并行引入 Vue 或另一套组件库。
 
 交易控制台属于高密度运维型产品，视觉风格应克制、清晰、可扫描。主要使用表格、筛选器、抽屉表单、详情页、状态徽标、趋势图、K 线图和配置 diff，不做营销式首页。
 
@@ -80,7 +79,7 @@ com.tj.crypto.observability
 
 功能：
 
-- 数据源连接状态：Binance、OKX、Coinglass、后续 Bybit。
+- 数据源连接状态：Binance、OKX、Coinglass；当前产品范围明确不接入其他平台。
 - 事件吞吐：BarEvent、LiquidationEvent、FundingRateEvent、OpenInterestEvent 每分钟数量。
 - 当前启用策略数量、最近信号数量、最近拒单数量。
 - 模拟账户权益、持仓、今日盈亏、最大回撤。
@@ -546,31 +545,35 @@ remark
 - 开启实盘前必须通过回测、模拟、风控校验。
 - 所有高风险操作都有审计记录。
 
-## 当前代码进入后台开发前必须处理的问题
+## 当前实现边界与下一优先级
 
-这些问题会直接影响后台开发质量，应优先进入任务列表：
+已解决的旧阻断：默认测试恢复为绿灯；Binance/OKX/Coinglass BTC/ETH 双市场数据、OMS journal、持久模拟账户/账本、重启恢复、reconciliation、outbox、异步回测、研究质量、执行容量、审计 hash chain、SLO 和对应管理页面已经落地。完整模拟交易链已在隔离 MySQL 与实际 HTTP API 上验收，并由 Playwright 覆盖页面关键路径。
 
-- `mvn test` 当前仍有执行引擎测试失败，不能在红灯状态上继续扩展后台。
-- 应用启动会在 `AppLifecycleListener` 中无条件查询数据库，导致无本地 MySQL 或权限错误时应用退出。
-- Binance K 线服务仍未启用，技术因子没有稳定实时输入。
-- `BacktestEngine` 和 `PaperTradingEngine` 绕过执行和风控链路。
-- `VirtualAccount.getTotalEquity()` 未把冻结本金或持仓市值纳入权益计算。
-- `MaxDailyLossRule` 使用系统当前时间，不适合历史回测和交易日风控。
-- `StrategyProperties` 暂未实际驱动策略启停、symbol 过滤和阈值。
-- `TestController` 暴露任意 URL 请求能力，上线前必须移除或限制到 dev profile。
+下一优先级：
+
+- 用 Binance testnet/OKX demo 凭据执行私有 API 契约矩阵和受限 canary；当前适配器存在不等于已认证。
+- 对危险修复、实盘开关和风险放宽增加影响预览、二次确认、双人审批与 MFA。
+- 实现单写者 fencing、跨实例 job/订单 ownership、备份恢复和 disaster kill switch。
+- 把 secret 引用接到 Vault/KMS/HSM，加入轮换/撤销、IP 白名单和最小权限检查。
+- 增强 reconciliation incident 工单流：owner、SLA、证据附件、审批 repair 和通知升级。
+- 增加 connector/data-quality run chart、SLO burn-rate 告警、分布式 trace 和可执行 runbook。
+- 研究 UI 后续增加 sweep DAG、参数稳定性图、PBO/DSR、K 线成交标注和 artifact retention。
+- 优化 ECharts/Ant Design 大 chunk，补移动端、键盘可达性和大数据表虚拟滚动。
 
 ## 给另一个开发 AI 的提示词
 
 ```text
-你现在接手 crypto-trading 项目的管理后台建设。请先阅读：
+你现在接手 crypto-trading 项目的下一阶段管理后台建设。请先阅读：
 1. CLAUDE.md
 2. docs/crypto-trading-system-blueprint.md
 3. docs/architecture/admin-management-console.md
 4. docs/architecture/event-model.md
 5. docs/architecture/strategy-engine-v2.md
 6. docs/architecture/backtest-engine.md
-7. docs/architecture/risk-engine.md
-8. docs/architecture/execution-engine.md
+7. docs/architecture/multi-factor-backtesting.md
+8. docs/architecture/oms-ems.md
+9. docs/architecture/risk-engine.md
+10. docs/architecture/execution-engine.md
 
 开发要求：
 - 先进入计划模式，列出任务拆分、影响文件、测试策略和回滚风险，再开始编码。
@@ -579,16 +582,19 @@ remark
 - 不要重复造轮子。前端优先使用成熟组件库，后端优先使用 Spring MVC、Validation、MyBatis-Plus、Actuator、OpenAPI。
 - 不要写超长类。Controller 只做入参出参，业务编排放 Application Service，领域校验放 validation/domain。
 - 所有可变配置都要考虑版本、校验、发布、回滚、审计。
-- 第一阶段只做只读控制台和配置盘点，不要直接开启实盘交易能力。
-- 后台开发前先修复当前红灯：mvn test 必须通过，应用启动不能因为无关 DB 查询直接退出。
+- 以实际代码、Flyway schema 和测试为准；不要根据旧完成报告重复实现或声称能力完整。
+- 当前只允许 Binance/Coinglass/OKX、SPOT/PERPETUAL、BTCUSDT/ETHUSDT，不添加其他平台或币种。
+- 不要把“已有 Binance/OKX private adapter”写成“已可实盘”。没有 owner 凭据认证、HA/fencing、Vault/KMS、DR 和审批门禁时必须保持 live write guard 关闭。
 - 每次改动后运行 mvn test。涉及启动逻辑时还要运行一次 jar 或 spring-boot:run 做启动验证。
-- 添加必要的单元测试和集成测试，尤其是配置发布、策略启停、风险配置生效、后台 API 校验。
+- 前端改动运行 npm run lint、npm run build 和相关 Playwright E2E。
+- 添加必要的单元、集成和 E2E 测试，尤其是任务恢复、取消竞态、配置发布、权限和后台 API 校验。
 
-优先实施 Phase A：
-1. 新增 admin 后端包结构。
-2. 实现 /api/admin/overview、/api/admin/connectors、/api/admin/strategies、/api/admin/factors、/api/admin/risk/configs 只读接口。
-3. 返回当前系统真实状态，包括 Binance 未启用、Coinglass API key 未配置、策略列表、因子列表、风险配置。
-4. 添加 DTO、Service、Controller 测试。
-5. 如果创建前端，使用 React + TypeScript + Vite + TanStack Query + Ant Design Pro 或 Arco Design，做高密度控制台，不做营销页。
-6. 输出本阶段设计文档和测试结果。
+优先实施“交易所认证与生产门禁”，不要重复开发已完成的异步任务、模拟账本或审计/SLO：
+1. 盘点 `TradingVenueGateway`、write guard、OMS recovery 和 reconciliation 的当前契约，先写认证矩阵与失败语义。
+2. 只使用 Binance testnet/OKX demo 或明确授权的小额账户；密钥从环境/Vault 注入，日志和测试证据必须脱敏。
+3. 覆盖 place/query/cancel、部分成交、重复 clientOrderId、超时未知结果、用户流断线、listen key/登录续期、限流和时钟偏差。
+4. 对 spot/perpetual、BTC/ETH、账户模式、position side 和 reduce-only 分别验证，禁止用一个成功样例外推全部组合。
+5. 将 venue truth 与 OMS order/fill/position/balance 对账，未知结果不得自动重下单。
+6. 增加单写者 fencing、审批门禁和 canary notional 上限；故障时 fail closed，并保留只减仓/撤单通道。
+7. 跑全量后端、前端、E2E、重启恢复和 24h soak，输出可复核证据、未验证边界、回滚步骤与 runbook。
 ```
