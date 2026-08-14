@@ -1,9 +1,12 @@
 target/
+hs_err_pid*.log
+replay_pid*.log
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
+.idea/
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
@@ -28,6 +31,9 @@ target/
 /nbdist/
 /.nb-gradle/
 build/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
