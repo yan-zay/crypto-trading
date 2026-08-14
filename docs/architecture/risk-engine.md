@@ -1,56 +1,34 @@
 # 风控引擎
 
-> 本文档描述风控规则引擎的设计。
+所有非 HOLD 订单在账户变更前通过 `RiskEngine`。规则按 Spring 注入顺序短路执行，规则异常按拒绝处理。
 
-## 设计理念
-
-风控是信号 → 执行链路中的必经环节。任何交易信号在执行前必须通过所有风控规则。
-
-## 架构
-
-```
-SignalEvent → ExecutionEngine → RiskEngine.checkAll() → Order → 执行
-                                    ↓
-                              RiskRule 1 → RiskRule 2 → RiskRule N
-```
-
-## 核心组件
-
-### RiskRule 接口
+## 规则契约
 
 ```java
-public interface RiskRule {
-    String name();
-    RiskCheckResult check(Order order, VirtualAccount account);
-}
+RiskCheckResult check(Order order, TradingAccount account);
+void onOrderFilled(Order order);
+RiskRule newSession();
 ```
 
-### RiskEngine
+`check` 必须无副作用；只有真实成交后才能在 `onOrderFilled` 记账。有状态规则必须通过 `newSession` 返回干净实例，避免模拟账户和回测相互污染。
 
-串联所有规则，任一规则不通过则拒绝订单。
+## 当前规则
 
-### 已实现的规则
+| 规则 | 作用 |
+|---|---|
+| `MaxLossPerTradeRule` | 单笔风险上限 |
+| `MaxDailyLossRule` | 按订单事件时间计算当日损失上限 |
+| `MaxPositionSizeRule` | 单订单/持仓大小限制 |
+| `PerSymbolExposureRule` | 单 instrument 暴露限制 |
+| `TotalExposureRule` | 账户总暴露限制 |
+| `CooldownRule` | 连续亏损后的事件时间冷却 |
+| `StrategyBudgetRule` | 按真实策略 ID 的资金预算，成交后记账 |
 
-| 规则 | 说明 | 默认值 |
-|------|------|--------|
-| MaxLossPerTradeRule | 单笔最大亏损限制 | 2% |
-| MaxDailyLossRule | 每日最大亏损限制 | 5% |
-| MaxPositionSizeRule | 最大持仓量限制 | 30% |
+`reduceOnly` 平仓应优先降低风险，因此暴露类规则不能阻止它。`KillSwitch` 支持 HALT 和 CLOSE_ONLY，`DrawdownGuard` 提供回撤保护。
 
-### PositionSizer
+## 当前限制
 
-根据信号置信度和风控规则计算建议仓位：
-- 基础仓位 = 余额 * 最大持仓占比
-- 调整后 = 基础仓位 * 置信度
-
-## 添加新规则
-
-1. 实现 `RiskRule` 接口
-2. 注册为 `@Component`（自动被 RiskEngine 发现）
-3. 添加测试
-
-## 不能做的事
-
-- 不支持动态规则配置（运行时修改规则）
-- 不支持规则优先级
-- 不支持相关性限制（BTC/ETH 同向持仓）
+- 保证金阶梯、动态杠杆、资金费率、借贷、组合保证金和交易所风险参数仍不完整。
+- 规则优先级和配置 schema 尚未形成统一 rule catalog。
+- 缺少相关性/因子暴露、venue/账户/策略多层限额和风险预算分配。
+- 缺少独立风险服务、双人审批、限额变更告警和灾备 Kill Switch。

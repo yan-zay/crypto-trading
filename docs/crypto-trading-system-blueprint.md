@@ -164,7 +164,7 @@ TA4J 是纯 Java 技术分析库，支持 MA、EMA、MACD、RSI、Bollinger Band
 
 ```java
 public enum Exchange {
-    BINANCE, COINGLASS, OKX, BYBIT;
+    BINANCE, COINGLASS, OKX;
 }
 ```
 
@@ -703,7 +703,7 @@ crypto-app
 | TD-9 | ~~无测试代码~~ | 🔴 高 | ✅ 已修复 — 71 测试类，553 测试用例，全部通过 |
 | TD-10 | CoinglassWebSocketClient 中 KLineData 直接 set 修改（可变） | 🟡 中 | 待修复 — KLineData 仍为可变 DTO |
 | TD-11 | ~~application.yml 中数据库连接使用默认密码 "111"~~ | 🔴 高 | ✅ 已修复 — 使用环境变量占位符 |
-| TD-12 | ~~Binance WS URL 硬编码旧地址格式~~ | 🟡 中 | ✅ 已修复 — 通过 WebsocketProperties 配置 |
+| TD-12 | ~~Binance WS URL 硬编码旧地址格式~~ | 🟡 中 | ✅ 已修复 — 通过 ConnectorProperties 分离现货/永续地址 |
 | TD-13 | 前端构建 chunk 超过 500 kB | 🟢 低 | 待优化 — 考虑 code-splitting |
 
 ---

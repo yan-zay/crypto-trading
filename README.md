@@ -42,7 +42,7 @@ mvn clean test
 mvn clean package -DskipTests
 
 # 运行 JAR
-java -jar target/crypto-trading-1.0.0.jar
+java -jar target/crypto-trading.jar
 
 # 运行冒烟测试 (需要 MySQL)
 ./scripts/smoke-test.sh
@@ -87,7 +87,7 @@ docker build -t crypto-trading .
 # 运行容器
 docker run -p 51104:51104 \
   -e DB_USERNAME=root \
-  -e DB_PASSWORD=123456 \
+  -e DB_PASSWORD="${DB_PASSWORD}" \
   -e SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/crypto_trading \
   crypto-trading
 ```
@@ -107,4 +107,4 @@ mvn spotless:apply
 
 ## License
 
-Private - Internal Use Only
+All rights reserved. No license is granted for use, modification, or distribution.

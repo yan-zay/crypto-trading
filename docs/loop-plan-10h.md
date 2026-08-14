@@ -35,7 +35,7 @@ Workflow "数据管线":
   │   - 实现 BinanceHistoricalDataProvider
   │   - 调用 /fapi/v1/klines 接口批量下载
   │   - 存入 MySQL bar_event 表
-  │   - 支持 BTCUSDT/ETHUSDT/SOLUSDT 1min 数据
+  │   - 支持 BTCUSDT/ETHUSDT 1min 数据
   │
   └── Agent 3: 新增 ATR/ADX/SuperTrend 因子
       - 实现 3 个技术指标因子（使用 TA4J）
