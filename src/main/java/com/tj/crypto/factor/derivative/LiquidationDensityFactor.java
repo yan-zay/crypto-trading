@@ -41,12 +41,12 @@ public class LiquidationDensityFactor implements FactorCalculator {
     }
 
     private void onLiquidation(LiquidationEvent event) {
-        String key = event.instrument().symbol();
+        String key = buildUnderlyingKey(event.instrument());
         liqHistory.compute(key, (k, v) -> {
             List<LiquidationRecord> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
             synchronized (list) {
                 list.add(new LiquidationRecord(event.metadata().exchangeTimestamp(), event.quantityUsd()));
-                long cutoff = System.currentTimeMillis() - WINDOW_MILLIS * 10;
+                long cutoff = event.metadata().exchangeTimestamp() - WINDOW_MILLIS * 10;
                 list.removeIf(r -> r.timestamp < cutoff);
             }
             return list;
@@ -60,18 +60,29 @@ public class LiquidationDensityFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
-        List<LiquidationRecord> records = liqHistory.get(instrument.symbol());
+        return calculateAsOf(instrument, timeframe, System.currentTimeMillis());
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        List<LiquidationRecord> records = liqHistory.get(buildUnderlyingKey(instrument));
         if (records == null) return Factor.warmup(name());
         synchronized (records) {
             if (records.isEmpty()) return Factor.warmup(name());
-            long now = System.currentTimeMillis();
-            long windowStart = now - WINDOW_MILLIS;
+            long windowStart = asOfTimestamp - WINDOW_MILLIS;
             BigDecimal totalInWindow = records.stream()
-                    .filter(r -> r.timestamp >= windowStart)
+                    .filter(r -> r.timestamp >= windowStart && r.timestamp <= asOfTimestamp)
                     .map(r -> r.amountUsd)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            return Factor.of(name(), totalInWindow, now);
+            return Factor.of(name(), totalInWindow, asOfTimestamp);
         }
+    }
+
+    /**
+     * Coinglass 是跨交易所聚合源，因此这里有意忽略 exchange，但保留 marketType。
+     */
+    private String buildUnderlyingKey(Instrument instrument) {
+        return instrument.marketType().getCode() + ":" + instrument.symbol();
     }
 
     private record LiquidationRecord(long timestamp, BigDecimal amountUsd) {}

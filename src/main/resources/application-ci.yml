@@ -1,0 +1,38 @@
+server:
+  port: 51104
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/crypto_trading?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+
+management:
+  server:
+    address: 127.0.0.1
+    port: 51105
+
+crypto:
+  persistence:
+    # CI must observe a database-acknowledged durable spool, not only an in-memory batch.
+    bar-batch-size: 1
+  auth:
+    secret-key: ${AUTH_SECRET:ci-only-auth-secret-not-for-production}
+    token-ttl-ms: 900000
+  connector:
+    binance-enabled: false
+    okx:
+      enabled: false
+  coinglass:
+    websocket-enabled: false
+    kline-polling-enabled: false
+  private-trading:
+    operating-mode: RESEARCH_ONLY
+    live-write-enabled: false
+    user-streams-enabled: false
+    binance:
+      enabled: false
+      write-enabled: false
+    okx:
+      enabled: false
+      write-enabled: false

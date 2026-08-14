@@ -105,8 +105,8 @@ class CoinglassLiquidationNormalizerTest {
     class ErrorHandling {
 
         @Test
-        @DisplayName("无效 side 值应默认为 LONG 且不抛异常")
-        void shouldDefaultToLongForInvalidSide() {
+        @DisplayName("无效 side 值应丢弃而不是猜测方向")
+        void shouldDropInvalidSide() {
             LiquidationOrder order = createOrder("BTCUSDT", 99,
                     new BigDecimal("16721.50"),
                     new BigDecimal("500000"),
@@ -114,8 +114,7 @@ class CoinglassLiquidationNormalizerTest {
 
             LiquidationEvent result = normalizer.normalize(order);
 
-            assertThat(result).isNotNull();
-            assertThat(result.side()).isEqualTo(OrderSide.LONG);
+            assertThat(result).isNull();
         }
 
         @Test

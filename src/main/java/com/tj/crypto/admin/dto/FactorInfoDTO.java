@@ -13,4 +13,7 @@ public class FactorInfoDTO {
 
     /** 因子名称，如 "SMA_20", "RSI_14" */
     private String name;
+
+    /** 是否能仅使用历史 K 线做时点一致的回测。 */
+    private boolean historicalBacktestSupported;
 }

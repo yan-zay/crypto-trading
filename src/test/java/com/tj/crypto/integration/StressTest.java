@@ -28,6 +28,7 @@ import com.tj.crypto.strategy.core.StrategyContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -51,6 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 4. 并发安全 — 多线程同时发布事件，验证无 ConcurrentModificationException
  * 5. 内存泄漏 — 创建大量 BarEvent 后验证 GC 可回收
  */
+@Tag("stress")
 @DisplayName("压力测试与边界条件")
 class StressTest {
 
@@ -65,7 +67,7 @@ class StressTest {
         List<FactorCalculator> factorCalculators = List.of();
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
-                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties),
+                new RiskEngine(List.of()), new PositionSizer(riskProperties), new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
         engine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);
     }

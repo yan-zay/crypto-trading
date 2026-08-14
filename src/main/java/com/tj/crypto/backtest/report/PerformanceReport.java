@@ -27,7 +27,7 @@ import java.util.Map;
  * @param avgTradeDuration     平均交易时长（毫秒）
  * @param maxWinStreak         最大连胜次数
  * @param maxLoseStreak        最大连亏次数
- * @param monthlyReturns       月度收益（key: yyyy-MM, value: 收益额）
+ * @param monthlyReturns       月度收益率（key: yyyy-MM, value: 百分比）
  * @param totalFees            总手续费
  * @param assumptionsJson      回测假设快照（JSON 字符串）
  */

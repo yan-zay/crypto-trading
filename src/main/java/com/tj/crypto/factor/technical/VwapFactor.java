@@ -4,7 +4,8 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +28,7 @@ import java.util.List;
  * 对于日内策略，应配合 D1 或更小周期使用。
  */
 @Component
-public class VwapFactor implements FactorCalculator {
+public class VwapFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
 
@@ -44,6 +45,20 @@ public class VwapFactor implements FactorCalculator {
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         // 获取最近的 bar 数据（用于近似当日 VWAP）
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, 500);
+        return calculateFromBars(bars);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        return calculateFromBars(BarSlices.latestFinalized(bars, 500));
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        return calculateFromBars(barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, 500));
+    }
+
+    private Factor calculateFromBars(List<BarEvent> bars) {
         if (bars.isEmpty()) {
             return Factor.warmup(name());
         }

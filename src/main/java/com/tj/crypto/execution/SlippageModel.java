@@ -20,4 +20,18 @@ public interface SlippageModel {
      * @return 应用滑点后的价格
      */
     BigDecimal applySlippage(BigDecimal price, OrderSide side, OrderType type);
+
+    /** Volume-aware quote; default preserves legacy fixed-slippage behavior. */
+    default ExecutionPricing quote(BigDecimal price, OrderSide side, OrderType type,
+                                   BigDecimal requestedQuantity, BigDecimal baseVolume) {
+        return quote(price, side, type, requestedQuantity, baseVolume, true);
+    }
+
+    default ExecutionPricing quote(BigDecimal price, OrderSide side, OrderType type,
+                                   BigDecimal requestedQuantity, BigDecimal baseVolume,
+                                   boolean allowPartial) {
+        return new ExecutionPricing(requestedQuantity, applySlippage(price, side, type),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                requestedQuantity);
+    }
 }

@@ -16,6 +16,7 @@ public final class TradeConverter {
     public static TradeRecordDO toDO(Trade trade) {
         TradeRecordDO dobj = new TradeRecordDO();
         dobj.setExchange(trade.instrument().exchange().getCode());
+        dobj.setMarketType(trade.instrument().marketType().name());
         dobj.setSymbol(trade.instrument().symbol());
         dobj.setSide(trade.side().name());
         dobj.setQuantity(trade.quantity());
@@ -24,6 +25,8 @@ public final class TradeConverter {
         dobj.setEntryTime(trade.entryTime());
         dobj.setExitTime(trade.exitTime());
         dobj.setRealizedPnl(trade.realizedPnL());
+        dobj.setTotalFee(trade.totalFee());
+        dobj.setNetPnl(trade.netPnL());
         return dobj;
     }
 }

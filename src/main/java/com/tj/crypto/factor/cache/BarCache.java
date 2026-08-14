@@ -5,6 +5,7 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.marketdata.model.BarEvent;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Bar 数据缓存接口。
@@ -13,7 +14,7 @@ import java.util.List;
 public interface BarCache {
 
     /**
-     * 添加 bar 到缓存。
+     * 添加或更新 bar。未收盘 bar 只进入 forming 区，收盘 bar 按 openTime 幂等 upsert。
      */
     void addBar(BarEvent bar);
 
@@ -26,6 +27,15 @@ public interface BarCache {
      * @return bar 列表（可能少于 count）
      */
     List<BarEvent> getBars(Instrument instrument, Timeframe timeframe, int count);
+
+    /**
+     * 获取 exchangeTimestamp 不晚于 asOfTimestamp 的最近 N 根已收盘 bar。
+     */
+    List<BarEvent> getBarsAsOf(Instrument instrument, Timeframe timeframe,
+                               long asOfTimestamp, int count);
+
+    /** 返回当前尚未收盘的 K 线快照；因子计算不会读取该值。 */
+    Optional<BarEvent> getFormingBar(Instrument instrument, Timeframe timeframe);
 
     /**
      * 获取缓存的 bar 数量。

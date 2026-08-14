@@ -53,19 +53,19 @@ class BacktestAssumptionsTest {
     }
 
     @Test
-    @DisplayName("CLOSE_ONLY 应使用收盘价作为基础价格")
-    void closeOnlyShouldUseClosePrice() {
+    @DisplayName("CLOSE_ONLY 兼容枚举应使用下一根 K 线开盘价")
+    void closeOnlyShouldUseNextBarOpenPrice() {
         FillModel fillModel = FillModel.create(BacktestAssumptions.FillMode.CLOSE_ONLY);
         BarEvent bar = createBar(BigDecimal.valueOf(100), BigDecimal.valueOf(110));
 
         BigDecimal basePrice = fillModel.calculateBasePrice(bar);
 
-        assertThat(basePrice).isEqualByComparingTo(BigDecimal.valueOf(110));
+        assertThat(basePrice).isEqualByComparingTo(BigDecimal.valueOf(100));
     }
 
     @Test
-    @DisplayName("INTERPOLATED 应使用 (open + close) / 2 作为基础价格")
-    void interpolatedShouldUseAveragePrice() {
+    @DisplayName("INTERPOLATED 应使用下一根 K 线 OHLC4 作为基础价格")
+    void interpolatedShouldUseOhlc4Price() {
         FillModel fillModel = FillModel.create(BacktestAssumptions.FillMode.INTERPOLATED);
         BarEvent bar = createBar(BigDecimal.valueOf(100), BigDecimal.valueOf(110));
 
@@ -77,8 +77,8 @@ class BacktestAssumptionsTest {
     }
 
     @Test
-    @DisplayName("INTERPOLATED 模式应比 CLOSE_ONLY 更乐观（上涨行情中价格更低）")
-    void interpolatedShouldBeMoreOptimisticInUptrend() {
+    @DisplayName("上涨 K 线中 OHLC4 应高于开盘价")
+    void interpolatedShouldBeAboveOpenInUptrend() {
         FillModel closeOnly = FillModel.create(BacktestAssumptions.FillMode.CLOSE_ONLY);
         FillModel interpolated = FillModel.create(BacktestAssumptions.FillMode.INTERPOLATED);
 
@@ -88,13 +88,12 @@ class BacktestAssumptionsTest {
         BigDecimal closeOnlyPrice = closeOnly.calculateBasePrice(uptrendBar);
         BigDecimal interpolatedPrice = interpolated.calculateBasePrice(uptrendBar);
 
-        // 上涨时，INTERPOLATED 价格更低（更乐观的买入价）
-        assertThat(interpolatedPrice).isLessThan(closeOnlyPrice);
+        assertThat(interpolatedPrice).isGreaterThan(closeOnlyPrice);
     }
 
     @Test
-    @DisplayName("INTERPOLATED 模式应比 CLOSE_ONLY 更乐观（下跌行情中价格更高）")
-    void interpolatedShouldBeMoreOptimisticInDowntrend() {
+    @DisplayName("下跌 K 线中 OHLC4 应低于开盘价")
+    void interpolatedShouldBeBelowOpenInDowntrend() {
         FillModel closeOnly = FillModel.create(BacktestAssumptions.FillMode.CLOSE_ONLY);
         FillModel interpolated = FillModel.create(BacktestAssumptions.FillMode.INTERPOLATED);
 
@@ -104,8 +103,7 @@ class BacktestAssumptionsTest {
         BigDecimal closeOnlyPrice = closeOnly.calculateBasePrice(downtrendBar);
         BigDecimal interpolatedPrice = interpolated.calculateBasePrice(downtrendBar);
 
-        // 下跌时，INTERPOLATED 价格更高（更乐观的卖出价）
-        assertThat(interpolatedPrice).isGreaterThan(closeOnlyPrice);
+        assertThat(interpolatedPrice).isLessThan(closeOnlyPrice);
     }
 
     @Test

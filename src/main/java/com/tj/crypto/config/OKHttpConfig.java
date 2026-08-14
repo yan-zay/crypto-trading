@@ -2,10 +2,10 @@ package com.tj.crypto.config;
 
 import com.tj.crypto.config.properties.ProxyProperties;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.logging.HttpLoggingInterceptor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  */
 @Configuration
 @AllArgsConstructor
+@Slf4j
 public class OkHttpConfig {
 
     private final ProxyProperties proxyProperties;
@@ -35,19 +36,9 @@ public class OkHttpConfig {
                 5,                       // 保持时间（分钟）
                 TimeUnit.MINUTES         // 时间单位
         );
-        // 设置SOCKS代理
-        Proxy socksProxy = new Proxy(Proxy.Type.SOCKS,
-                new InetSocketAddress(proxyProperties.getHost(), proxyProperties.getPort()));
-
-        // 2. (可选) 创建并配置日志拦截器
-        HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
-        // 设置日志级别：NONE, BASIC, HEADERS, BODY:
-        // 生产环境建议使用 BASIC 或 NONE，避免记录敏感信息
-        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BASIC);
-
-        // 3. 构建 OkHttpClient
+        // Query strings and headers are never logged: private signatures,
+        // listen keys and vendor API keys can live in either location.
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
-                .proxy(socksProxy)
                 // 连接超时：建立与服务器的TCP连接所需时间
                 .connectTimeout(30, TimeUnit.SECONDS)
                 // 读取超时：从服务器读取数据字节之间的最长时间
@@ -60,13 +51,28 @@ public class OkHttpConfig {
                 .connectionPool(connectionPool)
                 // 是否在连接失败时重试（默认为true）
                 .retryOnConnectionFailure(true)
-                // 添加应用拦截器（如日志记录）
-                .addInterceptor(loggingInterceptor)
+                .addInterceptor(chain -> {
+                    Request request = chain.request();
+                    long started = System.nanoTime();
+                    String safeTarget = request.url().scheme() + "://" + request.url().host()
+                            + request.url().encodedPath();
+                    log.debug("HTTP --> {} {}", request.method(), safeTarget);
+                    try {
+                        okhttp3.Response response = chain.proceed(request);
+                        log.debug("HTTP <-- {} {} {}ms", response.code(), safeTarget,
+                                (System.nanoTime() - started) / 1_000_000);
+                        return response;
+                    } catch (java.io.IOException e) {
+                        log.debug("HTTP <-- FAILED {} {}ms", safeTarget,
+                                (System.nanoTime() - started) / 1_000_000);
+                        throw e;
+                    }
+                })
                 // 示例：添加一个自定义的应用拦截器（例如添加公共头）
                 .addInterceptor(chain -> {
                     Request originalRequest = chain.request();
                     Request newRequest = originalRequest.newBuilder()
-                            .header("User-Agent", "Your-App-Name/1.0")
+                            .header("User-Agent", "crypto-trading/1.0")
                             .header("Accept", "application/json")
                             // 可以添加其他公共头
                             // .header("Authorization", "Bearer " + yourAuthToken) // 谨慎处理认证信息
@@ -74,6 +80,11 @@ public class OkHttpConfig {
                             .build();
                     return chain.proceed(newRequest);
                 });
+        if (proxyProperties.isEnabled()) {
+            Proxy socksProxy = new Proxy(Proxy.Type.SOCKS,
+                    new InetSocketAddress(proxyProperties.getHost(), proxyProperties.getPort()));
+            builder.proxy(socksProxy);
+        }
         // 根据是否需要验证主机名和SSL证书，决定是否添加以下配置
         // .hostnameVerifier(customHostnameVerifier)
         // .sslSocketFactory(sslSocketFactory, trustManager)

@@ -3,7 +3,6 @@ package com.tj.crypto.backtest.engine;
 import com.tj.crypto.marketdata.model.BarEvent;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 
 /**
  * 成交模型接口。
@@ -11,8 +10,8 @@ import java.math.RoundingMode;
  *
  * <p>两种模式：
  * <ul>
- *   <li>CLOSE_ONLY: 使用收盘价（最保守，防止未来函数）</li>
- *   <li>INTERPOLATED: 使用 (open + close) / 2（更乐观，标注为假设）</li>
+ *   <li>CLOSE_ONLY: 在信号 K 线收盘后，于下一根 K 线开盘成交</li>
+ *   <li>INTERPOLATED: 在下一根 K 线使用 OHLC4 近似成交，仅用于敏感性分析</li>
  * </ul>
  *
  * <p>注意：此模型仅计算基础价格，滑点由 ExecutionEngine 单独处理。
@@ -22,7 +21,7 @@ public interface FillModel {
     /**
      * 计算基础成交价格（不含滑点）。
      *
-     * @param bar 当前 K 线事件
+     * @param bar 信号产生后的下一根 K 线
      * @return 基础成交价格
      */
     BigDecimal calculateBasePrice(BarEvent bar);
@@ -48,14 +47,13 @@ public interface FillModel {
     }
 
     /**
-     * 仅在 K 线收盘价成交。
-     * 最保守的假设，防止未来函数。
+     * 信号在上一根 K 线收盘后生成，本模型使用下一根 K 线开盘价。
      */
     class CloseOnlyFillModel implements FillModel {
 
         @Override
         public BigDecimal calculateBasePrice(BarEvent bar) {
-            return bar.close();
+            return bar.open();
         }
 
         @Override
@@ -65,17 +63,14 @@ public interface FillModel {
     }
 
     /**
-     * 使用 (open + close) / 2 成交。
-     * 更乐观的假设，标注为乐观。
+     * 使用下一根 K 线 OHLC4 近似成交，只适合执行敏感性分析。
      */
     class InterpolatedFillModel implements FillModel {
 
-        private static final int SCALE = 8;
-
         @Override
         public BigDecimal calculateBasePrice(BarEvent bar) {
-            return bar.open().add(bar.close())
-                    .divide(BigDecimal.valueOf(2), SCALE, RoundingMode.HALF_UP);
+            return bar.open().add(bar.high()).add(bar.low()).add(bar.close())
+                    .divide(BigDecimal.valueOf(4), 8, java.math.RoundingMode.HALF_UP);
         }
 
         @Override

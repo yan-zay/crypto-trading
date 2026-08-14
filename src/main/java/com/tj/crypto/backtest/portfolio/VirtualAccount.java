@@ -1,7 +1,9 @@
 package com.tj.crypto.backtest.portfolio;
 
 import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.InstrumentId;
 import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.MarketType;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
@@ -12,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 虚拟账户。
+ * 虚拟账户（现货模拟）。
  * 管理虚拟资金、持仓和交易记录。
  *
  * 设计决策：
@@ -22,13 +24,13 @@ import java.util.Map;
  * - 支持手续费模型（可选）
  */
 @Slf4j
-public class VirtualAccount {
+public class VirtualAccount implements TradingAccount {
 
     private static final int SCALE = 8;
 
     private BigDecimal balance;
     private final BigDecimal initialBalance;
-    private final Map<String, Position> positions = new HashMap<>();
+    private final Map<InstrumentId, Position> positions = new HashMap<>();
     private final List<Trade> trades = new ArrayList<>();
     private final FeeModel feeModel;
     private BigDecimal totalFeesPaid = BigDecimal.ZERO;
@@ -50,6 +52,14 @@ public class VirtualAccount {
      */
     public boolean openPosition(Instrument instrument, OrderSide side,
                                 BigDecimal quantity, BigDecimal price, long timestamp) {
+        if (instrument.marketType() == MarketType.SPOT && side == OrderSide.SHORT) {
+            log.warn("Spot account cannot open a short position: {}", instrument.id().value());
+            return false;
+        }
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0 || price.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Invalid position params: quantity={}, price={}", quantity, price);
+            return false;
+        }
         BigDecimal cost = quantity.multiply(price);
 
         // 计算开仓手续费
@@ -65,7 +75,7 @@ public class VirtualAccount {
             return false;
         }
 
-        String key = instrument.symbol();
+        InstrumentId key = instrument.id();
         if (positions.containsKey(key)) {
             log.warn("Position already exists for {}", key);
             return false;
@@ -84,7 +94,7 @@ public class VirtualAccount {
      * @return 交易记录，如果没有持仓返回 null
      */
     public Trade closePosition(Instrument instrument, BigDecimal price, long timestamp) {
-        String key = instrument.symbol();
+        InstrumentId key = instrument.id();
         Position pos = positions.remove(key);
         if (pos == null) {
             return null;
@@ -132,13 +142,27 @@ public class VirtualAccount {
      */
     public BigDecimal getUnrealizedPnL(Map<String, BigDecimal> currentPrices) {
         BigDecimal total = BigDecimal.ZERO;
-        for (Map.Entry<String, Position> entry : positions.entrySet()) {
-            BigDecimal price = currentPrices.get(entry.getKey());
+        for (Position position : positions.values()) {
+            BigDecimal price = resolvePrice(currentPrices, position.instrument());
             if (price != null) {
-                total = total.add(entry.getValue().unrealizedPnL(price));
+                total = total.add(position.unrealizedPnL(price));
             }
         }
         return total;
+    }
+
+    @Override
+    public BigDecimal getPositionValue(Instrument instrument, BigDecimal currentPrice) {
+        Position pos = positions.get(instrument.id());
+        if (pos == null) {
+            return BigDecimal.ZERO;
+        }
+        return pos.quantity().multiply(currentPrice);
+    }
+
+    @Override
+    public BigDecimal getTotalPositionValue(Map<String, BigDecimal> currentPrices) {
+        return getPositionMarketValue(currentPrices);
     }
 
     /**
@@ -146,10 +170,10 @@ public class VirtualAccount {
      */
     public BigDecimal getPositionMarketValue(Map<String, BigDecimal> currentPrices) {
         BigDecimal total = BigDecimal.ZERO;
-        for (Map.Entry<String, Position> entry : positions.entrySet()) {
-            BigDecimal price = currentPrices.get(entry.getKey());
+        for (Position position : positions.values()) {
+            BigDecimal price = resolvePrice(currentPrices, position.instrument());
             if (price != null) {
-                total = total.add(entry.getValue().quantity().multiply(price));
+                total = total.add(position.quantity().multiply(price));
             }
         }
         return total;
@@ -163,10 +187,53 @@ public class VirtualAccount {
         return balance.add(getPositionMarketValue(currentPrices));
     }
 
+    @Override
+    public AccountRiskSnapshot riskSnapshot(Instrument instrument, BigDecimal currentPrice) {
+        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal target = BigDecimal.ZERO;
+        for (Position position : positions.values()) {
+            BigDecimal mark = position.instrument().id().equals(instrument.id())
+                    ? currentPrice : position.entryPrice();
+            BigDecimal value = position.quantity().multiply(mark).abs();
+            gross = gross.add(value);
+            if (position.instrument().id().equals(instrument.id())) {
+                target = value;
+            }
+        }
+        return new AccountRiskSnapshot(balance.add(gross), balance, gross, target);
+    }
+
     public BigDecimal getBalance() { return balance; }
     public BigDecimal getInitialBalance() { return initialBalance; }
-    public Map<String, Position> getPositions() { return Map.copyOf(positions); }
+    public Map<String, Position> getPositions() {
+        Map<String, Position> view = new HashMap<>();
+        positions.forEach((key, value) -> view.put(key.value(), value));
+        return Map.copyOf(view);
+    }
     public List<Trade> getTrades() { return List.copyOf(trades); }
-    public boolean hasPosition(Instrument instrument) { return positions.containsKey(instrument.symbol()); }
+    public boolean hasPosition(Instrument instrument) { return positions.containsKey(instrument.id()); }
+
+    /**
+     * 获取指定交易工具的当前持仓方向。
+     *
+     * @param instrument 交易工具
+     * @return 持仓方向（LONG/SHORT），无持仓返回 null
+     */
+    public OrderSide getPositionSide(Instrument instrument) {
+        Position pos = positions.get(instrument.id());
+        return pos != null ? pos.side() : null;
+    }
+
+    @Override
+    public BigDecimal getPositionQuantity(Instrument instrument) {
+        Position pos = positions.get(instrument.id());
+        return pos != null ? pos.quantity() : BigDecimal.ZERO;
+    }
+
     public BigDecimal getTotalFeesPaid() { return totalFeesPaid; }
+
+    private BigDecimal resolvePrice(Map<String, BigDecimal> prices, Instrument instrument) {
+        BigDecimal canonical = prices.get(instrument.id().value());
+        return canonical != null ? canonical : prices.get(instrument.symbol());
+    }
 }

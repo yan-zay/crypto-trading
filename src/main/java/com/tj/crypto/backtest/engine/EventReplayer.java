@@ -43,9 +43,12 @@ public class EventReplayer {
                 bars.size(), instrument.symbol(), timeframe.getCode(), from, to);
 
         int count = 0;
+        BacktestProgressMonitor monitor = BacktestExecutionContext.monitor();
         for (BarEvent bar : bars) {
+            monitor.checkpoint();
             eventBus.publish(bar);
             count++;
+            monitor.onProgress(count, bars.size());
         }
 
         log.info("Replay complete: {} events published", count);

@@ -38,7 +38,7 @@ public class BarEventPersistenceService {
                 .map(BarEventConverter::toDO)
                 .toList();
 
-        barEventMapper.insertBatch(entities);
+        barEventMapper.upsertBatch(entities);
         log.info("Persisted {} bar events to database", entities.size());
     }
 
@@ -54,6 +54,7 @@ public class BarEventPersistenceService {
     public List<BarEvent> loadByTimeRange(Instrument instrument, Timeframe timeframe,
                                            long from, long to) {
         List<BarEventDO> entities = barEventMapper.selectByTimeRange(
+                instrument.exchange().getCode(), instrument.marketType().getCode(),
                 instrument.symbol(), timeframe.getCode(), from, to);
 
         return entities.stream()

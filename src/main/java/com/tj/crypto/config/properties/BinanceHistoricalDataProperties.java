@@ -15,8 +15,22 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "crypto.binance.historical")
 public class BinanceHistoricalDataProperties {
 
+    /** Binance Spot REST API 基础地址。 */
+    private String spotBaseUrl = "https://api.binance.com";
+
+    /** Binance USD-M Futures REST API 基础地址。 */
+    private String perpetualBaseUrl = "https://fapi.binance.com";
+
     /**
-     * Binance Futures REST API 基础地址。
+     * 保留旧配置的兼容访问器，语义是 USD-M 永续合约地址。
      */
-    private String baseUrl = "https://fapi.binance.com";
+    @Deprecated
+    public String getBaseUrl() {
+        return perpetualBaseUrl;
+    }
+
+    @Deprecated
+    public void setBaseUrl(String baseUrl) {
+        this.perpetualBaseUrl = baseUrl;
+    }
 }

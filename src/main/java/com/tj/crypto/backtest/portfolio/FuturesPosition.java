@@ -13,6 +13,7 @@ import java.math.RoundingMode;
  * @param side             多/空方向
  * @param quantity         持仓数量（合约张数或标的数量）
  * @param entryPrice       开仓均价
+ * @param entryTime        开仓事件时间
  * @param leverage         杠杆倍数
  * @param marginMode       保证金模式
  * @param margin           保证金（开仓时锁定）
@@ -24,6 +25,7 @@ public record FuturesPosition(
         OrderSide side,
         BigDecimal quantity,
         BigDecimal entryPrice,
+        long entryTime,
         int leverage,
         MarginMode marginMode,
         BigDecimal margin,

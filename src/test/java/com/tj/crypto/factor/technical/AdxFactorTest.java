@@ -67,6 +67,6 @@ class AdxFactorTest {
     @Test
     @DisplayName("因子名称应为 ADX_14")
     void shouldReturnCorrectName() {
-        assertThat(adxFactor.name()).isEqualTo("ADX_14");
+        assertThat(adxFactor.name()).isEqualTo("ADX");
     }
 }

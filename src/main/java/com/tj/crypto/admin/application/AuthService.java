@@ -5,13 +5,18 @@ import cn.hutool.crypto.digest.BCrypt;
 import com.tj.crypto.admin.domain.Role;
 import com.tj.crypto.admin.domain.UserDO;
 import com.tj.crypto.admin.mapper.UserMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 认证与授权服务。
@@ -21,16 +26,65 @@ import java.util.Optional;
 @Service
 public class AuthService {
 
-    private static final long TOKEN_TTL_MS = 24 * 60 * 60 * 1000L; // 24 小时
+    private static final long DEFAULT_TOKEN_TTL_MS = 15 * 60 * 1000L;
     private static final String TOKEN_SEPARATOR = ":";
+    private static final String DEFAULT_SECRET = "default-secret-change-in-production";
+    private static final int MAX_LOGIN_ATTEMPTS = 5;
+    private static final long LOGIN_LOCKOUT_MS = 15 * 60 * 1000L; // 15 分钟
 
     private final UserMapper userMapper;
     private final String secretKey;
+    private final long tokenTtlMs;
 
+    @Value("${spring.profiles.active:dev}")
+    private String activeProfiles = "dev";
+
+    /** 登录失败计数：username -> attempt info */
+    private final ConcurrentHashMap<String, LoginAttempt> loginAttempts = new ConcurrentHashMap<>();
+
+    @Autowired
     public AuthService(UserMapper userMapper,
-                       @Value("${crypto.auth.secret-key:default-secret-change-in-production}") String secretKey) {
+                       @Value("${crypto.auth.secret-key:default-secret-change-in-production}") String secretKey,
+                       @Value("${crypto.auth.token-ttl-ms:900000}") long tokenTtlMs) {
         this.userMapper = userMapper;
         this.secretKey = secretKey;
+        if (tokenTtlMs < 60_000 || tokenTtlMs > 3_600_000) {
+            throw new IllegalArgumentException("Admin token TTL must be between 1 and 60 minutes");
+        }
+        this.tokenTtlMs = tokenTtlMs;
+    }
+
+    /** Compatibility constructor for isolated tests. */
+    public AuthService(UserMapper userMapper, String secretKey) {
+        this(userMapper, secretKey, DEFAULT_TOKEN_TTL_MS);
+    }
+
+    @PostConstruct
+    void validateConfig() {
+        boolean production = java.util.Arrays.stream(activeProfiles.split(","))
+                .map(String::trim).anyMatch("pro"::equalsIgnoreCase);
+        if (production && (DEFAULT_SECRET.equals(secretKey)
+                || secretKey == null || secretKey.length() < 32)) {
+            throw new IllegalStateException(
+                    "Production profile requires a non-default crypto.auth.secret-key of at least 32 characters");
+        }
+        if (DEFAULT_SECRET.equals(secretKey)) {
+            log.warn("Using default auth secret; configure crypto.auth.secret-key outside development");
+        }
+        if (production) {
+            userMapper.selectByUsername("admin").ifPresent(user -> {
+                if (BCrypt.checkpw("admin123", user.getPasswordHash())) {
+                    throw new IllegalStateException(
+                            "Default admin password is forbidden in production");
+                }
+            });
+            userMapper.selectByUsername("viewer").ifPresent(user -> {
+                if (BCrypt.checkpw("viewer123", user.getPasswordHash())) {
+                    throw new IllegalStateException(
+                            "Default viewer password is forbidden in production");
+                }
+            });
+        }
     }
 
     /**
@@ -43,8 +97,20 @@ public class AuthService {
      * @throws IllegalArgumentException 用户名或密码错误
      */
     public String login(String username, String password) {
+        if (username == null || username.isBlank() || username.length() > 50
+                || password == null || password.isBlank() || password.length() > 256) {
+            throw new IllegalArgumentException("用户名或密码错误");
+        }
+        // 登录限流检查
+        LoginAttempt attempt = loginAttempts.get(username);
+        if (attempt != null && attempt.isLocked()) {
+            log.warn("Login rate limited: [{}], remaining={}ms", username, attempt.remainingLockMs());
+            throw new IllegalArgumentException("登录尝试过多，请稍后再试");
+        }
+
         Optional<UserDO> userOpt = userMapper.selectByUsername(username);
         if (userOpt.isEmpty()) {
+            recordFailedAttempt(username);
             log.warn("Login failed: user not found [{}]", username);
             throw new IllegalArgumentException("用户名或密码错误");
         }
@@ -56,10 +122,13 @@ public class AuthService {
         }
 
         if (!BCrypt.checkpw(password, user.getPasswordHash())) {
+            recordFailedAttempt(username);
             log.warn("Login failed: wrong password [{}]", username);
             throw new IllegalArgumentException("用户名或密码错误");
         }
 
+        // 登录成功，清除失败记录
+        loginAttempts.remove(username);
         String token = generateToken(user);
         log.info("User [{}] logged in, role={}", username, user.getRole());
         return token;
@@ -85,10 +154,11 @@ public class AuthService {
         String payloadBase64 = parts[0];
         String signature = parts[1];
 
-        // 验签
+        // 验签（常量时间比较，防止时序攻击）
         String expectedSig = SecureUtil.hmacSha256(secretKey)
                 .digestHex(payloadBase64);
-        if (!expectedSig.equals(signature)) {
+        if (!MessageDigest.isEqual(expectedSig.getBytes(StandardCharsets.UTF_8),
+                signature.getBytes(StandardCharsets.UTF_8))) {
             throw new IllegalArgumentException("token 签名无效");
         }
 
@@ -138,7 +208,7 @@ public class AuthService {
      * 签名：HMAC-SHA256(secretKey, payloadBase64)
      */
     String generateToken(UserDO user) {
-        long expiry = System.currentTimeMillis() + TOKEN_TTL_MS;
+        long expiry = System.currentTimeMillis() + tokenTtlMs;
         String payload = String.join(TOKEN_SEPARATOR,
                 String.valueOf(user.getId()),
                 user.getUsername(),
@@ -164,5 +234,39 @@ public class AuthService {
      */
     public static String hashPassword(String rawPassword) {
         return BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+    }
+
+    // ========== 登录限流 ==========
+
+    private void recordFailedAttempt(String username) {
+        loginAttempts.compute(username, (key, existing) -> {
+            if (existing == null) {
+                return new LoginAttempt(1, System.currentTimeMillis());
+            }
+            if (System.currentTimeMillis() - existing.lastAttemptTime > LOGIN_LOCKOUT_MS) {
+                return new LoginAttempt(1, System.currentTimeMillis());
+            }
+            return new LoginAttempt(existing.attempts.incrementAndGet(), System.currentTimeMillis());
+        });
+    }
+
+    /** 登录尝试记录 */
+    private static class LoginAttempt {
+        final AtomicInteger attempts;
+        final long lastAttemptTime;
+
+        LoginAttempt(int attempts, long lastAttemptTime) {
+            this.attempts = new AtomicInteger(attempts);
+            this.lastAttemptTime = lastAttemptTime;
+        }
+
+        boolean isLocked() {
+            return attempts.get() >= MAX_LOGIN_ATTEMPTS
+                    && System.currentTimeMillis() - lastAttemptTime < LOGIN_LOCKOUT_MS;
+        }
+
+        long remainingLockMs() {
+            return LOGIN_LOCKOUT_MS - (System.currentTimeMillis() - lastAttemptTime);
+        }
     }
 }

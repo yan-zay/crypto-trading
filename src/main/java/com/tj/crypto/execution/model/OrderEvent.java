@@ -24,6 +24,7 @@ public record OrderEvent(
      * 事件类型。
      */
     public enum EventType {
+        CREATED,
         SUBMITTED,
         ACKNOWLEDGED,
         FILLED,
@@ -35,6 +36,10 @@ public record OrderEvent(
     }
 
     // ─── 便捷工厂方法 ────────────────────────────────────────────
+
+    public static OrderEvent created(String orderId, long timestamp) {
+        return new OrderEvent(orderId, EventType.CREATED, timestamp, null, null, null);
+    }
 
     public static OrderEvent submitted(String orderId, long timestamp) {
         return new OrderEvent(orderId, EventType.SUBMITTED, timestamp, null, null, null);

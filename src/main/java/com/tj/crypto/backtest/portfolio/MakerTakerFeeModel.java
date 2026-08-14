@@ -1,6 +1,7 @@
 package com.tj.crypto.backtest.portfolio;
 
 import com.tj.crypto.common.domain.OrderSide;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -23,6 +24,7 @@ public class MakerTakerFeeModel implements FeeModel {
     private final BigDecimal makerFeeRate;
     private final BigDecimal takerFeeRate;
 
+    @Autowired
     public MakerTakerFeeModel(FeeProperties feeProperties) {
         this.makerFeeRate = feeProperties.getMakerFeeRate();
         this.takerFeeRate = feeProperties.getTakerFeeRate();

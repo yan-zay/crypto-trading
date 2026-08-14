@@ -196,6 +196,11 @@ class DataPipelineTest {
         // 故障策略
         LiquidationSpikeStrategyV2 failingStrategy = new LiquidationSpikeStrategyV2() {
             @Override
+            public String name() {
+                return "FailingLiquidationSpike";
+            }
+
+            @Override
             public com.tj.crypto.strategy.core.SignalEvent onEvent(
                     com.tj.crypto.marketdata.model.MarketEvent event,
                     com.tj.crypto.strategy.core.StrategyContext ctx) {

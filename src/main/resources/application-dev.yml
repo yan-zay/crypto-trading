@@ -16,7 +16,7 @@ mybatis-plus:
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/id_generator?useUnicode=true&characterEncoding=UTF-8
+    url: jdbc:mysql://127.0.0.1:3306/crypto_trading?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
@@ -28,7 +28,11 @@ crypto:
     host: 127.0.0.1
     port: 10808
   websocket:
-    baseUrl: wss://fstream.binance.com
-    websocketUrl: wss://fstream.binance.com/ws/btcusdt@kline_1m
-    # WebSocket 客户端实现：tyrus（默认） 或 okhttp
-    client-type: ${WS_CLIENT_TYPE:tyrus}
+    baseUrl: wss://fstream.binance.com/market
+    websocketUrl: wss://fstream.binance.com/market
+    # WebSocket 客户端实现：okhttp（默认）
+    client-type: ${WS_CLIENT_TYPE:okhttp}
+  connector:
+    symbols: [BTCUSDT, ETHUSDT]
+    binance-spot-ws-url: wss://stream.binance.com:9443/stream
+    binance-perpetual-ws-url: wss://fstream.binance.com/stream

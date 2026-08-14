@@ -4,7 +4,8 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
@@ -33,7 +34,7 @@ import java.util.List;
  * 默认参数：period=10, multiplier=3.0
  */
 @Component
-public class SuperTrendFactor implements FactorCalculator {
+public class SuperTrendFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
     private final int period;
@@ -54,6 +55,22 @@ public class SuperTrendFactor implements FactorCalculator {
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         int requiredBars = period + 10;
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, requiredBars);
+        return calculateFromBars(instrument, timeframe, bars);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        return calculateFromBars(instrument, timeframe,
+                BarSlices.latestFinalized(bars, period + 10));
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        return calculateFromBars(instrument, timeframe,
+                barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, period + 10));
+    }
+
+    private Factor calculateFromBars(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
         if (bars.size() < period + 1) {
             return Factor.warmup(name());
         }

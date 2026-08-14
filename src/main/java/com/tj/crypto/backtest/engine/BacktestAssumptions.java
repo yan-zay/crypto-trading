@@ -8,7 +8,7 @@ import java.math.BigDecimal;
  *
  * <p>关键假设：
  * <ul>
- *   <li>fillMode: 成交模式。CLOSE_ONLY 防止未来函数，INTERPOLATED 更乐观但不现实</li>
+ *   <li>fillMode: 信号在收盘后生成，成交只能发生在下一根 K 线</li>
  *   <li>slippageModel: 滑点模型标识</li>
  *   <li>feeModel: 手续费模型标识</li>
  *   <li>minNotional: 最小名义价值（低于此值的订单不执行）</li>
@@ -92,14 +92,12 @@ public record BacktestAssumptions(
      */
     public enum FillMode {
         /**
-         * 仅在 K 线收盘价成交。
-         * 防止未来函数，是最保守的假设。
+         * 下一根 K 线开盘成交；枚举名为兼容旧配置而保留。
          */
         CLOSE_ONLY,
 
         /**
-         * 使用 (open + close) / 2 成交。
-         * 更乐观的假设，标注为乐观。
+         * 下一根 K 线 OHLC4 近似成交，仅用于敏感性分析。
          */
         INTERPOLATED
     }

@@ -1,6 +1,7 @@
 package com.tj.crypto.factor.derivative;
 
 import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.InstrumentId;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.factor.core.FactorCalculator;
@@ -29,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FundingRateChangeFactor implements FactorCalculator {
 
     private final MarketEventBus eventBus;
-    private final ConcurrentHashMap<String, List<BigDecimal>> rateHistory = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<InstrumentId, List<RateObservation>> rateHistory = new ConcurrentHashMap<>();
     private static final int HISTORY_SIZE = 24;
 
     public FundingRateChangeFactor(MarketEventBus eventBus) {
@@ -42,11 +43,11 @@ public class FundingRateChangeFactor implements FactorCalculator {
     }
 
     private void onFundingRate(FundingRateEvent event) {
-        String key = event.instrument().symbol();
+        InstrumentId key = event.instrument().id();
         rateHistory.compute(key, (k, v) -> {
-            List<BigDecimal> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
+            List<RateObservation> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
             synchronized (list) {
-                list.add(event.fundingRate());
+                list.add(new RateObservation(event.metadata().exchangeTimestamp(), event.fundingRate()));
                 while (list.size() > HISTORY_SIZE) {
                     list.remove(0);
                 }
@@ -62,13 +63,23 @@ public class FundingRateChangeFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
-        List<BigDecimal> rates = rateHistory.get(instrument.symbol());
+        return calculateAsOf(instrument, timeframe, Long.MAX_VALUE);
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        List<RateObservation> rates = rateHistory.get(instrument.id());
         if (rates == null) return Factor.warmup(name());
         synchronized (rates) {
-            if (rates.size() < 2) return Factor.warmup(name());
-            BigDecimal latest = rates.get(rates.size() - 1);
-            BigDecimal previous = rates.get(rates.size() - 2);
-            return Factor.of(name(), latest.subtract(previous), System.currentTimeMillis());
+            List<RateObservation> eligible = rates.stream()
+                    .filter(rate -> rate.timestamp() <= asOfTimestamp)
+                    .toList();
+            if (eligible.size() < 2) return Factor.warmup(name());
+            RateObservation latest = eligible.get(eligible.size() - 1);
+            RateObservation previous = eligible.get(eligible.size() - 2);
+            return Factor.of(name(), latest.value().subtract(previous.value()), latest.timestamp());
         }
     }
+
+    private record RateObservation(long timestamp, BigDecimal value) {}
 }

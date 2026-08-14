@@ -4,9 +4,11 @@ import com.tj.crypto.strategy.config.StrategyProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -37,7 +39,10 @@ public class StrategyManager {
 
         for (Strategy strategy : strategies) {
             String name = strategy.name();
-            strategyMap.put(name, strategy);
+            Strategy previous = strategyMap.putIfAbsent(name, strategy);
+            if (previous != null) {
+                throw new IllegalStateException("Duplicate strategy name registered: " + name);
+            }
 
             // 从配置读取初始状态，未配置则默认启用
             boolean initialEnabled = true;
@@ -47,6 +52,18 @@ public class StrategyManager {
             }
             enabledMap.put(name, initialEnabled);
             log.info("Strategy '{}' registered, enabled={}", name, initialEnabled);
+        }
+
+        Set<String> missingEnabledStrategies = new LinkedHashSet<>();
+        configs.forEach((name, config) -> {
+            if (config != null && config.isEnabled() && !strategyMap.containsKey(name)) {
+                missingEnabledStrategies.add(name);
+            }
+        });
+        if (!missingEnabledStrategies.isEmpty()) {
+            throw new IllegalStateException(
+                    "Enabled strategies are configured but no Strategy bean is registered: "
+                            + String.join(", ", missingEnabledStrategies));
         }
     }
 

@@ -28,6 +28,17 @@ class AuthServiceTest {
         authService = new AuthService(userMapper, "test-secret-key");
     }
 
+    @Test
+    @DisplayName("拒绝过长或过短的管理令牌有效期")
+    void shouldRejectUnsafeTokenTtl() {
+        assertThatThrownBy(() -> new AuthService(userMapper, "test-secret-key", 59_999))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("TTL");
+        assertThatThrownBy(() -> new AuthService(userMapper, "test-secret-key", 3_600_001))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("TTL");
+    }
+
     private UserDO createUser(long id, String username, String rawPassword, String role, boolean enabled) {
         UserDO user = new UserDO();
         user.setId(id);
@@ -61,6 +72,17 @@ class AuthServiceTest {
             when(userMapper.selectByUsername("nonexistent")).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> authService.login("nonexistent", "any"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("用户名或密码错误");
+        }
+
+        @Test
+        @DisplayName("缺失凭据以统一认证错误拒绝")
+        void shouldRejectMissingCredentials() {
+            assertThatThrownBy(() -> authService.login(null, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("用户名或密码错误");
+            assertThatThrownBy(() -> authService.login("", ""))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("用户名或密码错误");
         }
@@ -239,6 +261,12 @@ class AuthServiceTest {
             assertThat(Role.RISK_MANAGER.isAtLeast(Role.OPERATOR)).isTrue();
             assertThat(Role.OPERATOR.isAtLeast(Role.RESEARCHER)).isTrue();
             assertThat(Role.RESEARCHER.isAtLeast(Role.VIEWER)).isTrue();
+
+            assertThat(Role.LIVE_TRADER.isAtLeast(Role.VIEWER)).isTrue();
+            assertThat(Role.LIVE_TRADER.isAtLeast(Role.LIVE_TRADER)).isTrue();
+            assertThat(Role.LIVE_TRADER.isAtLeast(Role.OPERATOR)).isFalse();
+            assertThat(Role.LIVE_TRADER.isAtLeast(Role.RISK_MANAGER)).isFalse();
+            assertThat(Role.RISK_MANAGER.isAtLeast(Role.LIVE_TRADER)).isFalse();
 
             assertThat(Role.VIEWER.isAtLeast(Role.ADMIN)).isFalse();
             assertThat(Role.VIEWER.isAtLeast(Role.OPERATOR)).isFalse();

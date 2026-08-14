@@ -5,7 +5,8 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
@@ -21,16 +22,14 @@ import java.util.List;
  * %B > 1 价格在上轨之上，%B < 0 价格在下轨之下，%B = 0.5 价格在中轨。
  */
 @Component
-public class BollingerBandFactor implements FactorCalculator {
+public class BollingerBandFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
-    private final int period;
-    private final double stdDevMultiplier;
+    private final FactorProperties factorProperties;
 
     public BollingerBandFactor(BarCache barCache, FactorProperties factorProperties) {
         this.barCache = barCache;
-        this.period = factorProperties.getBbPeriod();
-        this.stdDevMultiplier = factorProperties.getBbStdDev();
+        this.factorProperties = factorProperties;
     }
 
     @Override
@@ -40,8 +39,29 @@ public class BollingerBandFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
+        int period = factorProperties.getBbPeriod();
         int requiredBars = period + 10;
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, requiredBars);
+        return calculateFromBars(instrument, timeframe, bars);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        int requiredBars = factorProperties.getBbPeriod() + 10;
+        return calculateFromBars(instrument, timeframe,
+                BarSlices.latestFinalized(bars, requiredBars));
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        int requiredBars = factorProperties.getBbPeriod() + 10;
+        return calculateFromBars(instrument, timeframe,
+                barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, requiredBars));
+    }
+
+    private Factor calculateFromBars(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        int period = factorProperties.getBbPeriod();
+        double stdDevMultiplier = factorProperties.getBbStdDev();
         if (bars.size() < period) {
             return Factor.warmup(name());
         }

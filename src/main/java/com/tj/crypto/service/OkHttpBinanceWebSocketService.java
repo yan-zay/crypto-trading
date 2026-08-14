@@ -2,16 +2,13 @@ package com.tj.crypto.service;
 
 import com.tj.crypto.client.OkHttpBinanceWebSocketClient;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 import static com.tj.crypto.config.ThreadPoolConfig.THREAD_POOL_NAME;
 
@@ -23,19 +20,17 @@ import static com.tj.crypto.config.ThreadPoolConfig.THREAD_POOL_NAME;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "crypto.websocket.client-type", havingValue = "okhttp")
+@ConditionalOnProperty(name = "crypto.connector.binance-enabled",
+        havingValue = "true", matchIfMissing = true)
 public class OkHttpBinanceWebSocketService {
 
     private final OkHttpBinanceWebSocketClient webSocketClient;
     private final ThreadPoolTaskExecutor tjTaskExecutor;
-    private final List<String> symbols;
 
     public OkHttpBinanceWebSocketService(OkHttpBinanceWebSocketClient webSocketClient,
-                                          ThreadPoolTaskExecutor tjTaskExecutor,
-                                          @Value("${crypto.binance.symbols}") List<String> symbols) {
+                                          ThreadPoolTaskExecutor tjTaskExecutor) {
         this.webSocketClient = webSocketClient;
         this.tjTaskExecutor = tjTaskExecutor;
-        this.symbols = symbols;
     }
 
     @PostConstruct
@@ -43,16 +38,12 @@ public class OkHttpBinanceWebSocketService {
         log.info("Initializing OkHttp Binance WebSocket service...");
         tjTaskExecutor.execute(() -> {
             webSocketClient.connect();
-            // 连接成功后订阅 K 线流（OkHttp 客户端在 URL 中已包含订阅，但也可手动订阅额外流）
-            try {
-                Thread.sleep(3000);
-                if (webSocketClient.isConnected()) {
-                    subscribeKlineStreams();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
         });
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        webSocketClient.disconnect();
     }
 
     @Async(THREAD_POOL_NAME)
@@ -64,17 +55,4 @@ public class OkHttpBinanceWebSocketService {
         }
     }
 
-    /**
-     * 订阅 Binance 期货 K 线流。
-     */
-    private void subscribeKlineStreams() {
-        String params = symbols.stream()
-                .map(s -> "\"" + s.toLowerCase() + "@kline_1m\"")
-                .collect(Collectors.joining(", "));
-        String subscribeMessage = """
-                {"method":"SUBSCRIBE","params":[%s],"id":1}
-                """.formatted(params);
-        webSocketClient.sendSubscribeMessage(subscribeMessage);
-        log.info("Subscribed to Binance kline streams via OkHttp: {}", symbols);
-    }
 }

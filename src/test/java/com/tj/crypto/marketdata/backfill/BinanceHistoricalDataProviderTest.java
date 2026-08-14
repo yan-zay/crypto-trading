@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -141,37 +142,40 @@ class BinanceHistoricalDataProviderTest {
         }
 
         @Test
-        @DisplayName("畸形 JSON 应返回空列表")
-        void shouldReturnEmptyForMalformedJson() {
+        @DisplayName("畸形 JSON 应显式失败")
+        void shouldFailForMalformedJson() {
             String json = "not valid json";
 
-            List<BarEvent> bars = provider.parseResponse(json, BTC_INSTRUMENT, Timeframe.M1);
-
-            assertThat(bars).isEmpty();
+            assertThatThrownBy(() -> provider.parseResponse(
+                    json, BTC_INSTRUMENT, Timeframe.M1))
+                    .isInstanceOf(HistoricalDataAccessException.class)
+                    .hasMessageContaining("parse Binance");
         }
 
         @Test
-        @DisplayName("非数组 JSON 应返回空列表")
-        void shouldReturnEmptyForNonArrayJson() {
+        @DisplayName("非数组 JSON 应显式失败")
+        void shouldFailForNonArrayJson() {
             String json = "{\"error\": \"invalid\"}";
 
-            List<BarEvent> bars = provider.parseResponse(json, BTC_INSTRUMENT, Timeframe.M1);
-
-            assertThat(bars).isEmpty();
+            assertThatThrownBy(() -> provider.parseResponse(
+                    json, BTC_INSTRUMENT, Timeframe.M1))
+                    .isInstanceOf(HistoricalDataAccessException.class)
+                    .hasMessageContaining("format");
         }
 
         @Test
-        @DisplayName("字段不足的 K 线应被跳过")
-        void shouldSkipKlineWithInsufficientFields() {
+        @DisplayName("整页字段不足的 K 线应显式失败")
+        void shouldFailWhenPageContainsNoValidKline() {
             String json = """
                     [
                         [1499040000000, "0.01634000", "0.80000000"]
                     ]
                     """;
 
-            List<BarEvent> bars = provider.parseResponse(json, BTC_INSTRUMENT, Timeframe.M1);
-
-            assertThat(bars).isEmpty();
+            assertThatThrownBy(() -> provider.parseResponse(
+                    json, BTC_INSTRUMENT, Timeframe.M1))
+                    .isInstanceOf(HistoricalDataAccessException.class)
+                    .hasMessageContaining("no valid candles");
         }
     }
 
@@ -200,6 +204,16 @@ class BinanceHistoricalDataProviderTest {
             assertThat(url).contains("symbol=ETHUSDT");
             assertThat(url).contains("interval=5m");
         }
+
+        @Test
+        @DisplayName("现货应使用 api/v3/klines")
+        void shouldBuildSpotUrl() {
+            Instrument spot = Instrument.of(Exchange.BINANCE, MarketType.SPOT, "BTCUSDT");
+            String url = provider.buildUrl(spot, Timeframe.H1, 1L, 2L);
+
+            assertThat(url).startsWith("https://api.binance.com/api/v3/klines");
+            assertThat(url).contains("symbol=BTCUSDT").contains("interval=1h");
+        }
     }
 
     @Nested
@@ -221,6 +235,25 @@ class BinanceHistoricalDataProviderTest {
 
             List<BarEvent> bars = provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
                     1499040000000L, 1499644799999L);
+
+            assertThat(bars).hasSize(1);
+            verify(httpClient, times(1)).newCall(any(Request.class));
+        }
+
+        @Test
+        @DisplayName("单根 K 线缺口的起止时间相等时仍应请求")
+        void shouldRequestSingleBarGapWithEqualBounds() throws IOException {
+            String singleBarJson = """
+                    [
+                        [1499040000000, "100.00", "110.00", "90.00", "105.00", "50.00", 1499040059999, "5000.00", 10, "25.00", "0", "0"]
+                    ]
+                    """;
+            Call call = mock(Call.class);
+            when(call.execute()).thenReturn(buildMockResponse(200, singleBarJson));
+            when(httpClient.newCall(any(Request.class))).thenReturn(call);
+
+            List<BarEvent> bars = provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
+                    1499040000000L, 1499040000000L);
 
             assertThat(bars).hasSize(1);
             verify(httpClient, times(1)).newCall(any(Request.class));
@@ -267,29 +300,29 @@ class BinanceHistoricalDataProviderTest {
         }
 
         @Test
-        @DisplayName("API 返回错误状态码时应返回空列表")
-        void shouldReturnEmptyOnApiError() throws IOException {
+        @DisplayName("API 返回错误状态码时应显式失败")
+        void shouldFailOnApiError() throws IOException {
             Call call = mock(Call.class);
             when(call.execute()).thenReturn(buildMockResponse(429, "{\"error\":\"rate limit\"}"));
             when(httpClient.newCall(any(Request.class))).thenReturn(call);
 
-            List<BarEvent> bars = provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
-                    1499040000000L, 1499644799999L);
-
-            assertThat(bars).isEmpty();
+            assertThatThrownBy(() -> provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
+                    1499040000000L, 1499644799999L))
+                    .isInstanceOf(HistoricalDataAccessException.class)
+                    .hasMessageContaining("HTTP 429");
         }
 
         @Test
-        @DisplayName("网络异常时应返回空列表")
-        void shouldReturnEmptyOnIoException() throws IOException {
+        @DisplayName("网络异常时应显式失败")
+        void shouldFailOnIoException() throws IOException {
             Call call = mock(Call.class);
             when(call.execute()).thenThrow(new IOException("Connection refused"));
             when(httpClient.newCall(any(Request.class))).thenReturn(call);
 
-            List<BarEvent> bars = provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
-                    1499040000000L, 1499644799999L);
-
-            assertThat(bars).isEmpty();
+            assertThatThrownBy(() -> provider.loadBars(BTC_INSTRUMENT, Timeframe.M1,
+                    1499040000000L, 1499644799999L))
+                    .isInstanceOf(HistoricalDataAccessException.class)
+                    .hasCauseInstanceOf(IOException.class);
         }
     }
 }

@@ -1,6 +1,6 @@
 package com.tj.crypto.risk;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.execution.model.Order;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -33,7 +33,7 @@ public class RiskEngine {
      * @param account 当前账户状态
      * @return 检查结果（全部通过返回 passed，任一不通过返回拒绝原因）
      */
-    public RiskCheckResult checkAll(Order order, VirtualAccount account) {
+    public RiskCheckResult checkAll(Order order, TradingAccount account) {
         for (RiskRule rule : rules) {
             try {
                 RiskCheckResult result = rule.check(order, account);
@@ -50,5 +50,22 @@ public class RiskEngine {
             }
         }
         return RiskCheckResult.passed();
+    }
+
+    /** 仅在真实成交后更新需要记账的风控规则。 */
+    public void onOrderFilled(Order order) {
+        for (RiskRule rule : rules) {
+            try {
+                rule.onOrderFilled(order);
+            } catch (Exception e) {
+                log.error("Risk post-fill accounting failed [{}]: {}",
+                        rule.name(), e.getMessage(), e);
+            }
+        }
+    }
+
+    /** Creates a risk engine whose stateful rules cannot leak across accounts or backtests. */
+    public RiskEngine newSession() {
+        return new RiskEngine(rules.stream().map(RiskRule::newSession).toList());
     }
 }

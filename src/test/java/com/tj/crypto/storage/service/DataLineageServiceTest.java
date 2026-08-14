@@ -1,6 +1,10 @@
 package com.tj.crypto.storage.service;
 
 import com.tj.crypto.storage.entity.BarEventDO;
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.MarketType;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.storage.entity.RawMessageDO;
 import com.tj.crypto.storage.mapper.BarEventMapper;
 import com.tj.crypto.storage.mapper.RawMessageMapper;
@@ -139,11 +143,8 @@ class DataLineageServiceTest {
         @Test
         @DisplayName("不同数据应返回不同版本标识")
         void shouldReturnDifferentVersionForDifferentData() {
-            BarEventDO bar1 = new BarEventDO();
-            bar1.setId(1L);
-
-            BarEventDO bar2 = new BarEventDO();
-            bar2.setId(2L);
+            BarEventDO bar1 = createBarEvent(1L, "BTCUSDT", 1000L);
+            BarEventDO bar2 = createBarEvent(2L, "BTCUSDT", 3000L);
 
             when(barEventMapper.selectByTimeRange("BTCUSDT", "1m", 1000L, 2000L))
                     .thenReturn(List.of(bar1));
@@ -152,6 +153,28 @@ class DataLineageServiceTest {
 
             String version1 = service.getDataVersion("BTCUSDT", "1m", 1000L, 2000L);
             String version2 = service.getDataVersion("BTCUSDT", "1m", 3000L, 4000L);
+
+            assertThat(version1).isNotEqualTo(version2);
+        }
+
+        @Test
+        @DisplayName("完整市场身份和 K 线内容修订必须进入版本哈希")
+        void shouldVersionOneExactMarketSeriesByContent() {
+            Instrument instrument = Instrument.of(
+                    Exchange.OKX, MarketType.PERPETUAL, "BTCUSDT");
+            BarEventDO original = createBarEvent(1L, "BTCUSDT", 1000L);
+            original.setExchange("okx");
+            original.setMarketType("perpetual");
+            BarEventDO corrected = createBarEvent(1L, "BTCUSDT", 1000L);
+            corrected.setExchange("okx");
+            corrected.setMarketType("perpetual");
+            corrected.setClosePrice(new BigDecimal("50051"));
+            when(barEventMapper.selectByTimeRange(
+                    "okx", "perpetual", "BTCUSDT", "1m", 1000L, 2000L))
+                    .thenReturn(List.of(original), List.of(corrected));
+
+            String version1 = service.getDataVersion(instrument, Timeframe.M1, 1000L, 2000L);
+            String version2 = service.getDataVersion(instrument, Timeframe.M1, 1000L, 2000L);
 
             assertThat(version1).isNotEqualTo(version2);
         }

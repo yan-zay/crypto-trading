@@ -17,6 +17,7 @@ import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.risk.PositionSizer;
 import com.tj.crypto.risk.RiskEngine;
+import com.tj.crypto.risk.RiskRule;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
@@ -30,8 +31,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class BacktestEngineTest {
 
@@ -45,7 +48,7 @@ class BacktestEngineTest {
         List<FactorCalculator> factorCalculators = List.of();
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
-                new RiskEngine(List.of()), new PositionSizer(), new FixedSlippageModel(riskProperties),
+                new RiskEngine(List.of()), new PositionSizer(riskProperties), new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
         engine = new BacktestEngine(performanceCalculator, factorCalculators, executionEngine);
 
@@ -269,5 +272,140 @@ class BacktestEngineTest {
         assertThat(result.signals()).isEmpty();
         assertThat(result.trades()).isEmpty();
         assertThat(result.finalBalance()).isEqualByComparingTo(config.initialBalance());
+    }
+
+    @Test
+    @DisplayName("信号只能在下一根 K 线开盘成交")
+    void shouldFillAtNextBarOpen() {
+        RiskProperties zeroSlippage = new RiskProperties();
+        zeroSlippage.setSlippageBps(0);
+        com.tj.crypto.execution.cost.ExecutionSimulationProperties zeroExecutionCost =
+                new com.tj.crypto.execution.cost.ExecutionSimulationProperties();
+        zeroExecutionCost.setSpreadBps(BigDecimal.ZERO);
+        zeroExecutionCost.setImpactCoefficientBps(BigDecimal.ZERO);
+        zeroExecutionCost.setMaxParticipationRate(BigDecimal.ONE);
+        BacktestEngine localEngine = new BacktestEngine(new PerformanceCalculator(), List.of(),
+                new ExecutionEngine(new RiskEngine(List.of()), new PositionSizer(zeroSlippage),
+                        new FixedSlippageModel(zeroSlippage, zeroExecutionCost),
+                        new com.tj.crypto.risk.KillSwitch()));
+        long start = 1_700_100_000_000L;
+        List<BarEvent> bars = List.of(
+                bar(start, 100, 110),
+                bar(start + 60_000, 200, 210),
+                bar(start + 120_000, 300, 310));
+        Strategy oneShot = new Strategy() {
+            private boolean emitted;
+            public String name() { return "OneShot"; }
+            public Set<Class<? extends MarketEvent>> listenedEvents() { return Set.of(BarEvent.class); }
+            public SignalEvent onEvent(MarketEvent event, StrategyContext context) {
+                if (emitted) return null;
+                emitted = true;
+                BarEvent current = (BarEvent) event;
+                return new SignalEvent(name(), current.instrument(), SignalType.BUY, BigDecimal.ONE,
+                        "one shot", Map.of(), current.metadata().exchangeTimestamp());
+            }
+        };
+
+        BacktestResult result = localEngine.run(
+                new BacktestConfig(btcUsdt, Timeframe.M1, start, start + 120_000,
+                        BigDecimal.valueOf(10_000)), oneShot,
+                new InMemoryHistoricalDataProvider(bars));
+
+        assertThat(result.trades()).hasSize(1);
+        assertThat(result.trades().get(0).entryTime()).isEqualTo(start + 60_000);
+        assertThat(result.trades().get(0).entryPrice()).isEqualByComparingTo("200");
+    }
+
+    @Test
+    @DisplayName("预热 K 线应更新策略状态但不得产生预热订单")
+    void shouldWarmStrategyStateWithoutTrading() {
+        long dataStart = 1_700_200_000_000L;
+        long tradeStart = dataStart + 60_000;
+        List<BarEvent> bars = List.of(
+                bar(dataStart, 100, 100),
+                bar(tradeStart, 90, 90),
+                bar(tradeStart + 60_000, 95, 95));
+
+        BacktestResult result = engine.run(
+                new BacktestConfig(btcUsdt, Timeframe.M1, dataStart, tradeStart,
+                        tradeStart + 60_000, BigDecimal.valueOf(10_000)),
+                new BuyLowSellHighStrategy(), new InMemoryHistoricalDataProvider(bars));
+
+        assertThat(result.signals()).hasSize(2);
+        assertThat(result.signals()).allMatch(signal -> signal.timestamp() >= tradeStart);
+        assertThat(result.signals().get(0).timestamp()).isEqualTo(tradeStart);
+        assertThat(result.trades()).hasSize(1);
+        assertThat(result.trades().get(0).entryTime()).isEqualTo(tradeStart + 60_000);
+    }
+
+    @Test
+    @DisplayName("每次回测必须创建独立风控会话")
+    void shouldCreateAnIsolatedRiskSessionForEveryRun() {
+        AtomicInteger sessionCount = new AtomicInteger();
+        RiskRule sessionAwareRule = new RiskRule() {
+            @Override
+            public String name() {
+                return "SessionAware";
+            }
+
+            @Override
+            public com.tj.crypto.risk.RiskCheckResult check(
+                    com.tj.crypto.execution.model.Order order,
+                    com.tj.crypto.backtest.portfolio.TradingAccount account) {
+                return com.tj.crypto.risk.RiskCheckResult.passed();
+            }
+
+            @Override
+            public RiskRule newSession() {
+                sessionCount.incrementAndGet();
+                return this;
+            }
+        };
+        RiskProperties properties = new RiskProperties();
+        ExecutionEngine template = new ExecutionEngine(
+                new RiskEngine(List.of(sessionAwareRule)), new PositionSizer(properties),
+                new FixedSlippageModel(properties), new com.tj.crypto.risk.KillSwitch());
+        BacktestEngine localEngine = new BacktestEngine(
+                new PerformanceCalculator(), List.of(), template);
+        HistoricalDataProvider empty = new InMemoryHistoricalDataProvider(List.of());
+
+        localEngine.run(config, new BuyLowSellHighStrategy(), empty);
+        localEngine.run(config, new BuyLowSellHighStrategy(), empty);
+
+        assertThat(sessionCount).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("必需的回测结果持久化失败时不得报告成功")
+    void shouldPropagateRequiredResultPersistenceFailure() {
+        BacktestResultListener requiredFailure = new BacktestResultListener() {
+            @Override
+            public void onCompleted(BacktestResult result) {
+                throw new IllegalStateException("result store unavailable");
+            }
+
+            @Override
+            public boolean requiredForCompletion() {
+                return true;
+            }
+        };
+        RiskProperties properties = new RiskProperties();
+        ExecutionEngine template = new ExecutionEngine(new RiskEngine(List.of()),
+                new PositionSizer(properties), new FixedSlippageModel(properties),
+                new com.tj.crypto.risk.KillSwitch());
+        BacktestEngine localEngine = new BacktestEngine(new PerformanceCalculator(),
+                List.of(), template, null, null, List.of(requiredFailure));
+
+        assertThatThrownBy(() -> localEngine.run(config, new BuyLowSellHighStrategy(),
+                new InMemoryHistoricalDataProvider(List.of())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("result store unavailable");
+    }
+
+    private BarEvent bar(long timestamp, double open, double close) {
+        return new BarEvent(btcUsdt, EventMetadata.of(Exchange.BINANCE, timestamp), Timeframe.M1,
+                BigDecimal.valueOf(open), BigDecimal.valueOf(Math.max(open, close)),
+                BigDecimal.valueOf(Math.min(open, close)), BigDecimal.valueOf(close),
+                BigDecimal.ONE, BigDecimal.valueOf(close), true);
     }
 }

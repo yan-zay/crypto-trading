@@ -1,6 +1,7 @@
 package com.tj.crypto.risk;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -29,6 +30,7 @@ public class DrawdownGuard {
     private final BigDecimal maxDrawdownPct;
     private final KillSwitch killSwitch;
 
+    @Autowired
     public DrawdownGuard(KillSwitch killSwitch) {
         this(killSwitch, DEFAULT_MAX_DRAWDOWN_PCT);
     }
@@ -58,7 +60,8 @@ public class DrawdownGuard {
         if (drawdownPct.compareTo(maxDrawdownPct) >= 0) {
             log.warn("[DRAWDOWN_GUARD] Drawdown {}% exceeded threshold {}%. Activating CLOSE_ONLY.",
                     drawdownPct.setScale(2, RoundingMode.HALF_UP), maxDrawdownPct);
-            killSwitch.activate(KillSwitch.Mode.CLOSE_ONLY);
+            killSwitch.activate(KillSwitch.Mode.CLOSE_ONLY,
+                    "MAX_DRAWDOWN_BREACH:" + drawdownPct.toPlainString(), "DRAWDOWN_GUARD");
             return true;
         }
 

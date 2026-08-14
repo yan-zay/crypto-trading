@@ -52,7 +52,7 @@ class FactorAnalyzerTest {
     private FactorRegistry buildRegistry(Factor... factorValues) {
         FactorCalculator calc = mock(FactorCalculator.class);
         when(calc.name()).thenReturn("TEST_FACTOR");
-        when(calc.calculate(any(), any())).thenReturn(factorValues[0],
+        when(calc.calculate(any(), any(), anyList())).thenReturn(factorValues[0],
                 java.util.Arrays.copyOfRange(factorValues, 1, factorValues.length));
         return new FactorRegistry(List.of(calc));
     }

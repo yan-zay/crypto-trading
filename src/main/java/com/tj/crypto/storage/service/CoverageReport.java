@@ -1,5 +1,8 @@
 package com.tj.crypto.storage.service;
 
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.MarketType;
+
 import java.util.List;
 
 /**
@@ -14,6 +17,8 @@ import java.util.List;
  * @param gaps         缺失时间段列表
  */
 public record CoverageReport(
+        Exchange exchange,
+        MarketType marketType,
         String symbol,
         String timeframe,
         long expectedBars,
@@ -21,6 +26,11 @@ public record CoverageReport(
         double coveragePct,
         List<TimeGap> gaps
 ) {
+    public CoverageReport(String symbol, String timeframe, long expectedBars, long actualBars,
+                          double coveragePct, List<TimeGap> gaps) {
+        this(Exchange.BINANCE, MarketType.PERPETUAL, symbol, timeframe,
+                expectedBars, actualBars, coveragePct, gaps);
+    }
     /**
      * 时间间隙，表示一段缺失数据的时间范围。
      *

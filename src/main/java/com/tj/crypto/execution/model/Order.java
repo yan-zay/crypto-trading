@@ -2,6 +2,7 @@ package com.tj.crypto.execution.model;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.TradeSide;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -27,6 +28,10 @@ import java.util.UUID;
  * @param submittedAt     提交时间
  * @param filledAt        完全成交时间
  * @param cancelledAt     取消时间
+ * @param strategyId      产生订单的策略标识
+ * @param tradeSide       交易所订单方向 BUY/SELL
+ * @param positionSide    订单作用的持仓方向 LONG/SHORT
+ * @param reduceOnly      是否只能降低现有仓位
  */
 public record Order(
         String orderId,
@@ -43,8 +48,31 @@ public record Order(
         long createdAt,
         long submittedAt,
         long filledAt,
-        long cancelledAt
+        long cancelledAt,
+        String strategyId,
+        TradeSide tradeSide,
+        OrderSide positionSide,
+        boolean reduceOnly
 ) {
+    public Order {
+        strategyId = strategyId == null || strategyId.isBlank() ? "UNASSIGNED" : strategyId;
+        positionSide = positionSide != null ? positionSide : side;
+        tradeSide = tradeSide != null ? tradeSide
+                : (side == OrderSide.LONG ? TradeSide.BUY : TradeSide.SELL);
+    }
+
+    /** 兼容旧调用；新执行链路必须使用包含策略与 reduceOnly 语义的工厂方法。 */
+    public Order(String orderId, String clientOrderId, Instrument instrument, OrderSide side,
+                 OrderType type, BigDecimal quantity, BigDecimal price,
+                 BigDecimal filledQuantity, BigDecimal avgFillPrice, OrderStatus status,
+                 OrderRejectReason rejectReason, long createdAt, long submittedAt,
+                 long filledAt, long cancelledAt) {
+        this(orderId, clientOrderId, instrument, side, type, quantity, price,
+                filledQuantity, avgFillPrice, status, rejectReason,
+                createdAt, submittedAt, filledAt, cancelledAt,
+                "UNASSIGNED", null, side, false);
+    }
+
     /**
      * 创建新的待执行订单（CREATED 状态）。
      */
@@ -56,7 +84,21 @@ public record Order(
                 instrument, side, type, quantity, price,
                 BigDecimal.ZERO, null,
                 OrderStatus.CREATED, OrderRejectReason.NONE,
-                timestamp, 0, 0, 0
+                timestamp, 0, 0, 0,
+                "UNASSIGNED", null, side, false
+        );
+    }
+
+    public static Order create(String strategyId, Instrument instrument, TradeSide tradeSide,
+                               OrderSide requestedSide, OrderSide positionSide, boolean reduceOnly,
+                               OrderType type, BigDecimal quantity, BigDecimal price, long timestamp) {
+        return new Order(
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                instrument, requestedSide, type, quantity, price,
+                BigDecimal.ZERO, null, OrderStatus.CREATED, OrderRejectReason.NONE,
+                timestamp, 0, 0, 0,
+                strategyId, tradeSide, positionSide, reduceOnly
         );
     }
 
@@ -71,7 +113,21 @@ public record Order(
                 instrument, side, type, quantity, null,
                 BigDecimal.ZERO, null,
                 OrderStatus.REJECTED, reason,
-                timestamp, 0, 0, 0
+                timestamp, 0, 0, 0,
+                "UNASSIGNED", null, side, false
+        );
+    }
+
+    public static Order rejected(String strategyId, Instrument instrument, TradeSide tradeSide,
+                                 OrderSide requestedSide, OrderSide positionSide, boolean reduceOnly,
+                                 OrderType type, BigDecimal quantity,
+                                 OrderRejectReason reason, long timestamp) {
+        return new Order(
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(),
+                instrument, requestedSide, type, quantity, null,
+                BigDecimal.ZERO, null, OrderStatus.REJECTED, reason,
+                timestamp, 0, 0, 0,
+                strategyId, tradeSide, positionSide, reduceOnly
         );
     }
 
@@ -83,7 +139,8 @@ public record Order(
         return new Order(orderId, clientOrderId, instrument, side, type, quantity, price,
                 quantity, price,
                 OrderStatus.FILLED, OrderRejectReason.NONE,
-                createdAt, submittedAt, filledAt, cancelledAt);
+                createdAt, submittedAt, filledAt, cancelledAt,
+                strategyId, tradeSide, positionSide, reduceOnly);
     }
 
     /** 是否为活跃状态 */
@@ -105,5 +162,9 @@ public record Order(
 
     public boolean isCancelled() {
         return status == OrderStatus.CANCELLED;
+    }
+
+    public BigDecimal notional() {
+        return price == null ? BigDecimal.ZERO : quantity.multiply(price);
     }
 }

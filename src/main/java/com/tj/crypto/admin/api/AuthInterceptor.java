@@ -77,18 +77,37 @@ public class AuthInterceptor implements HandlerInterceptor {
      * GET 只读端点：VIEWER
      * 策略启停、配置操作：OPERATOR
      * 风控相关写操作：RISK_MANAGER
+     * 实盘命令：LIVE_TRADER
      * 其他写操作：OPERATOR
      */
     private Role resolveRequiredRole(String path, String method) {
-        boolean isWrite = "POST".equals(method) || "PUT".equals(method) || "DELETE".equals(method);
+        boolean isReadOnlyMethod = "GET".equals(method)
+                || "HEAD".equals(method)
+                || "OPTIONS".equals(method);
 
-        if (!isWrite) {
+        // 只给两个已知的计算型端点 RESEARCHER 例外，不能让未来新增的 POST 自动继承该权限。
+        if ((path.equals("/api/admin/research-agent/capabilities")
+                && ("GET".equals(method) || "HEAD".equals(method)))
+                || (path.equals("/api/admin/research-agent/query") && "POST".equals(method))) {
+            return Role.RESEARCHER;
+        }
+        // 命名空间内任何未知端点默认锁到 ADMIN，防止后续误加写接口造成权限扩张。
+        if (path.equals("/api/admin/research-agent")
+                || path.startsWith("/api/admin/research-agent/")) {
+            return Role.ADMIN;
+        }
+
+        if (isReadOnlyMethod) {
             return Role.VIEWER;
         }
 
         // 风控写操作需要 RISK_MANAGER
         if (path.contains("/risk/kill-switch")) {
             return Role.RISK_MANAGER;
+        }
+
+        if (path.startsWith("/api/admin/live-trading/")) {
+            return Role.LIVE_TRADER;
         }
 
         // 策略启停、配置发布、回填等需要 OPERATOR

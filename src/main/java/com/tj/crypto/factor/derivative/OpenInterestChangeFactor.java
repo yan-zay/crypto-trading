@@ -1,6 +1,7 @@
 package com.tj.crypto.factor.derivative;
 
 import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.InstrumentId;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.event.MarketEventBus;
 import com.tj.crypto.factor.core.Factor;
@@ -29,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OpenInterestChangeFactor implements FactorCalculator {
 
     private final MarketEventBus eventBus;
-    private final ConcurrentHashMap<String, List<BigDecimal>> oiHistory = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<InstrumentId, List<OiObservation>> oiHistory = new ConcurrentHashMap<>();
     private static final int HISTORY_SIZE = 100;
 
     public OpenInterestChangeFactor(MarketEventBus eventBus) {
@@ -42,11 +43,11 @@ public class OpenInterestChangeFactor implements FactorCalculator {
     }
 
     private void onOpenInterest(OpenInterestEvent event) {
-        String key = event.instrument().symbol();
+        InstrumentId key = event.instrument().id();
         oiHistory.compute(key, (k, v) -> {
-            List<BigDecimal> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
+            List<OiObservation> list = v != null ? v : Collections.synchronizedList(new ArrayList<>());
             synchronized (list) {
-                list.add(event.openInterestUsd());
+                list.add(new OiObservation(event.metadata().exchangeTimestamp(), event.openInterestUsd()));
                 while (list.size() > HISTORY_SIZE) {
                     list.remove(0);
                 }
@@ -62,19 +63,29 @@ public class OpenInterestChangeFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
-        List<BigDecimal> history = oiHistory.get(instrument.symbol());
+        return calculateAsOf(instrument, timeframe, Long.MAX_VALUE);
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        List<OiObservation> history = oiHistory.get(instrument.id());
         if (history == null) return Factor.warmup(name());
         synchronized (history) {
-            if (history.size() < 2) return Factor.warmup(name());
-            BigDecimal latest = history.get(history.size() - 1);
-            BigDecimal previous = history.get(history.size() - 2);
-            if (previous.compareTo(BigDecimal.ZERO) == 0) {
-                return Factor.of(name(), BigDecimal.ZERO, System.currentTimeMillis());
+            List<OiObservation> eligible = history.stream()
+                    .filter(item -> item.timestamp() <= asOfTimestamp)
+                    .toList();
+            if (eligible.size() < 2) return Factor.warmup(name());
+            OiObservation latest = eligible.get(eligible.size() - 1);
+            OiObservation previous = eligible.get(eligible.size() - 2);
+            if (previous.value().compareTo(BigDecimal.ZERO) == 0) {
+                return Factor.of(name(), BigDecimal.ZERO, latest.timestamp());
             }
-            BigDecimal changePct = latest.subtract(previous)
-                    .divide(previous, 6, RoundingMode.HALF_UP)
+            BigDecimal changePct = latest.value().subtract(previous.value())
+                    .divide(previous.value(), 6, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100));
-            return Factor.of(name(), changePct, System.currentTimeMillis());
+            return Factor.of(name(), changePct, latest.timestamp());
         }
     }
+
+    private record OiObservation(long timestamp, BigDecimal value) {}
 }

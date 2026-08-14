@@ -1,12 +1,13 @@
 package com.tj.crypto.risk.rules;
 
 import com.tj.crypto.backtest.portfolio.Trade;
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskRule;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -32,6 +33,7 @@ public class CooldownRule implements RiskRule {
     private final int maxConsecutiveLosses;
     private final long cooldownMillis;
 
+    @Autowired
     public CooldownRule() {
         this(DEFAULT_MAX_CONSECUTIVE_LOSSES, DEFAULT_COOLDOWN_MINUTES);
     }
@@ -47,7 +49,7 @@ public class CooldownRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
+    public RiskCheckResult check(Order order, TradingAccount account) {
         List<Trade> trades = account.getTrades();
         if (trades.size() < maxConsecutiveLosses) {
             return RiskCheckResult.passed();
@@ -58,7 +60,7 @@ public class CooldownRule implements RiskRule {
                 trades.size() - maxConsecutiveLosses, trades.size());
 
         boolean allLosses = recentTrades.stream()
-                .allMatch(t -> t.realizedPnL().signum() < 0);
+                .allMatch(t -> t.netPnL().signum() < 0);
 
         if (!allLosses) {
             return RiskCheckResult.passed();
@@ -66,7 +68,7 @@ public class CooldownRule implements RiskRule {
 
         // 检查冷却期
         Trade lastLoss = recentTrades.get(recentTrades.size() - 1);
-        long elapsed = System.currentTimeMillis() - lastLoss.exitTime();
+        long elapsed = order.createdAt() - lastLoss.exitTime();
 
         if (elapsed < cooldownMillis) {
             long remainingSeconds = (cooldownMillis - elapsed) / 1000;

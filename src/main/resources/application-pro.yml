@@ -1,0 +1,40 @@
+server:
+  port: ${SERVER_PORT:51104}
+
+spring:
+  datasource:
+    # No production defaults: unresolved values make startup fail before any connector can run.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+management:
+  server:
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+    port: ${MANAGEMENT_PORT:51105}
+
+crypto:
+  auth:
+    secret-key: ${AUTH_SECRET}
+    token-ttl-ms: ${ADMIN_TOKEN_TTL_MS:900000}
+  connector:
+    binance-enabled: ${BINANCE_CONNECTOR_ENABLED:false}
+    okx:
+      enabled: ${OKX_ENABLED:false}
+  coinglass:
+    websocket-enabled: ${COINGLASS_WEBSOCKET_ENABLED:false}
+    kline-polling-enabled: ${COINGLASS_KLINE_POLLING_ENABLED:false}
+  private-trading:
+    # Production remains research-only unless deployment explicitly supplies every legal and
+    # venue safety gate required by PrivateTradingProperties.
+    operating-mode: ${TRADING_OPERATING_MODE:RESEARCH_ONLY}
+    live-write-enabled: ${LIVE_TRADING_WRITE_ENABLED:false}
+    user-streams-enabled: ${PRIVATE_USER_STREAMS_ENABLED:false}
+    binance:
+      enabled: ${BINANCE_PRIVATE_ENABLED:false}
+      write-enabled: ${BINANCE_WRITE_ENABLED:false}
+      testnet: ${BINANCE_TESTNET:false}
+    okx:
+      enabled: ${OKX_PRIVATE_ENABLED:false}
+      write-enabled: ${OKX_WRITE_ENABLED:false}
+      simulated-trading: ${OKX_SIMULATED_TRADING:false}

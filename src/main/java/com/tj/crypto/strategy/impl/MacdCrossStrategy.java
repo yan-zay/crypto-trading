@@ -1,6 +1,7 @@
 package com.tj.crypto.strategy.impl;
 
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.common.domain.MarketSeriesKey;
 import com.tj.crypto.factor.core.Factor;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
@@ -30,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MacdCrossStrategy implements Strategy {
 
     /** 按交易对存储上一次 MACD 柱状图值（避免跨交易对状态污染） */
-    private final Map<String, BigDecimal> lastHistogramMap = new ConcurrentHashMap<>();
+    private final Map<MarketSeriesKey, BigDecimal> lastHistogramMap = new ConcurrentHashMap<>();
 
     @Override
     public String name() {
@@ -54,7 +55,7 @@ public class MacdCrossStrategy implements Strategy {
         }
 
         BigDecimal currentHistogram = macdFactor.value();
-        String key = bar.instrument().symbol();
+        MarketSeriesKey key = MarketSeriesKey.of(bar.instrument(), bar.timeframe());
         BigDecimal lastHistogram = lastHistogramMap.get(key);
         SignalEvent signal = null;
 

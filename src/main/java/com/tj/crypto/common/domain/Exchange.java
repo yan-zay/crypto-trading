@@ -13,7 +13,6 @@ public enum Exchange {
     BINANCE("binance", "Binance"),
     COINGLASS("coinglass", "Coinglass"),
     OKX("okx", "OKX"),
-    BYBIT("bybit", "Bybit"),
     ;
 
     private final String code;

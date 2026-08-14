@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties("crypto.proxy")
 public class ProxyProperties {
 
-    private String host;
-    private Integer port;
+    /** 默认直连；只有显式启用时才使用本地 SOCKS 代理。 */
+    private boolean enabled = false;
+    private String host = "127.0.0.1";
+    private Integer port = 10808;
 }

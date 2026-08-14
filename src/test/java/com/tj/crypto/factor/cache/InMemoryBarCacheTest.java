@@ -30,11 +30,16 @@ class InMemoryBarCacheTest {
     }
 
     private BarEvent createBar(Instrument instrument, Timeframe timeframe, long timestamp, double close) {
-        EventMetadata metadata = EventMetadata.of(Exchange.BINANCE, timestamp);
+        return createBar(instrument, timeframe, timestamp, close, true);
+    }
+
+    private BarEvent createBar(Instrument instrument, Timeframe timeframe, long timestamp,
+                               double close, boolean closed) {
+        EventMetadata metadata = EventMetadata.of(instrument.exchange(), timestamp);
         return new BarEvent(instrument, metadata, timeframe,
                 BigDecimal.valueOf(close - 1), BigDecimal.valueOf(close + 1),
                 BigDecimal.valueOf(close - 2), BigDecimal.valueOf(close),
-                BigDecimal.valueOf(100), BigDecimal.valueOf(close * 100), true);
+                BigDecimal.valueOf(100), BigDecimal.valueOf(close * 100), closed);
     }
 
     @Test
@@ -95,5 +100,57 @@ class InMemoryBarCacheTest {
 
         cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 16000));
         assertThat(cache.size(btcUsdt, Timeframe.M1)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("未完成 K 线应与因子使用的完成态序列隔离")
+    void shouldKeepFormingBarSeparate() {
+        BarEvent forming = createBar(btcUsdt, Timeframe.M1, 1000L, 16000, false);
+        cache.addBar(forming);
+
+        assertThat(cache.getBars(btcUsdt, Timeframe.M1, 10)).isEmpty();
+        assertThat(cache.getFormingBar(btcUsdt, Timeframe.M1)).contains(forming);
+
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 16001, true));
+        assertThat(cache.getBars(btcUsdt, Timeframe.M1, 10)).hasSize(1);
+        assertThat(cache.getFormingBar(btcUsdt, Timeframe.M1)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("同一自然键的重复 K 线应幂等更新")
+    void shouldUpsertDuplicateBar() {
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 16000));
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 16010));
+
+        assertThat(cache.size(btcUsdt, Timeframe.M1)).isEqualTo(1);
+        assertThat(cache.getBars(btcUsdt, Timeframe.M1, 10).get(0).close())
+                .isEqualByComparingTo("16010");
+    }
+
+    @Test
+    @DisplayName("交易所与市场类型必须参与缓存分区")
+    void shouldSeparateExchangeAndMarketType() {
+        Instrument okxPerpetual = Instrument.of(Exchange.OKX, MarketType.PERPETUAL, "BTCUSDT");
+        Instrument binanceSpot = Instrument.of(Exchange.BINANCE, MarketType.SPOT, "BTCUSDT");
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 1));
+        cache.addBar(createBar(okxPerpetual, Timeframe.M1, 1000L, 2));
+        cache.addBar(createBar(binanceSpot, Timeframe.M1, 1000L, 3));
+
+        assertThat(cache.getBars(btcUsdt, Timeframe.M1, 10).get(0).close()).isEqualByComparingTo("1");
+        assertThat(cache.getBars(okxPerpetual, Timeframe.M1, 10).get(0).close()).isEqualByComparingTo("2");
+        assertThat(cache.getBars(binanceSpot, Timeframe.M1, 10).get(0).close()).isEqualByComparingTo("3");
+    }
+
+    @Test
+    @DisplayName("as-of 查询不得返回未来 K 线")
+    void shouldQueryPointInTimeSlice() {
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 1000L, 1));
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 2000L, 2));
+        cache.addBar(createBar(btcUsdt, Timeframe.M1, 3000L, 3));
+
+        List<BarEvent> bars = cache.getBarsAsOf(btcUsdt, Timeframe.M1, 2000L, 10);
+
+        assertThat(bars).extracting(bar -> bar.metadata().exchangeTimestamp())
+                .containsExactly(1000L, 2000L);
     }
 }

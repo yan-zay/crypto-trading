@@ -20,6 +20,7 @@ public class TradeRecordDO extends PhysicsTimeBaseDO {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String exchange;
+    private String marketType;
     private String symbol;
     private String side;
     private BigDecimal quantity;
@@ -28,4 +29,8 @@ public class TradeRecordDO extends PhysicsTimeBaseDO {
     private Long entryTime;
     private Long exitTime;
     private BigDecimal realizedPnl;
+    private BigDecimal totalFee;
+    private BigDecimal netPnl;
+    private String strategyId;
+    private String orderId;
 }

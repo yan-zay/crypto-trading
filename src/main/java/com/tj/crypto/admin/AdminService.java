@@ -94,7 +94,11 @@ public class AdminService {
      */
     public List<FactorInfoDTO> getAllFactors() {
         return factorRegistry.getRegisteredFactors().stream()
-                .map(name -> FactorInfoDTO.builder().name(name).build())
+                .map(name -> FactorInfoDTO.builder()
+                        .name(name)
+                        .historicalBacktestSupported(
+                                factorRegistry.supportsBarHistory(name))
+                        .build())
                 .toList();
     }
 

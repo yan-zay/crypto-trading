@@ -133,6 +133,56 @@ class AuthInterceptorTest {
         }
 
         @Test
+        @DisplayName("Research Agent 整个命名空间至少需要 RESEARCHER，包括计算型 POST")
+        void researchAgentNamespaceRequiresResearcher() throws Exception {
+            String viewerToken = loginAs("viewer", "viewer123", "VIEWER");
+            request.setRequestURI("/api/admin/research-agent/capabilities");
+            request.setMethod("GET");
+            request.addHeader("Authorization", "Bearer " + viewerToken);
+            assertThat(interceptor.preHandle(request, response, null)).isFalse();
+            assertThat(response.getStatus()).isEqualTo(403);
+
+            String researcherToken = loginAs("researcher", "research123", "RESEARCHER");
+            request = new MockHttpServletRequest();
+            request.setRequestURI("/api/admin/research-agent/query");
+            request.setMethod("POST");
+            request.addHeader("Authorization", "Bearer " + researcherToken);
+            assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("只读例外使用严格路径边界且不允许 RESEARCHER 绕到写接口")
+        void researchReadOnlyExceptionCannotBypassWriteAuthorization() throws Exception {
+            String token = loginAs("researcher", "research123", "RESEARCHER");
+            for (String path : new String[]{
+                    "/api/admin/research-agent-ops/query",
+                    "/api/admin/research-agent/future-write",
+                    "/api/admin/configs/draft",
+                    "/api/admin/live-trading/orders"}) {
+                request = new MockHttpServletRequest();
+                request.setRequestURI(path);
+                request.setMethod("POST");
+                request.addHeader("Authorization", "Bearer " + token);
+                MockHttpServletResponse localResponse = new MockHttpServletResponse();
+
+                assertThat(interceptor.preHandle(request, localResponse, null)).isFalse();
+                assertThat(localResponse.getStatus()).isEqualTo(403);
+            }
+        }
+
+        @Test
+        @DisplayName("未知和 PATCH 方法默认按写操作授权，不能伪装成 GET")
+        void patchDefaultsToWriteAuthorization() throws Exception {
+            String token = loginAs("viewer", "viewer123", "VIEWER");
+            request.setRequestURI("/api/admin/strategies/MacdCross");
+            request.setMethod("PATCH");
+            request.addHeader("Authorization", "Bearer " + token);
+
+            assertThat(interceptor.preHandle(request, response, null)).isFalse();
+            assertThat(response.getStatus()).isEqualTo(403);
+        }
+
+        @Test
         @DisplayName("OPERATOR 可以启用策略")
         void operatorCanEnableStrategy() throws Exception {
             String token = loginAs("operator", "op123", "OPERATOR");
@@ -170,6 +220,51 @@ class AuthInterceptorTest {
             boolean result = interceptor.preHandle(request, response, null);
 
             assertThat(result).isTrue();
+        }
+
+        @Test
+        @DisplayName("普通 OPERATOR 和 RISK_MANAGER 都不能发送实盘命令")
+        void liveCommandsRequireDedicatedRole() throws Exception {
+            for (String role : new String[]{"OPERATOR", "RISK_MANAGER"}) {
+                String token = loginAs(role.toLowerCase(), "password", role);
+                request = new MockHttpServletRequest();
+                request.setRequestURI("/api/admin/live-trading/orders");
+                request.setMethod("POST");
+                request.addHeader("Authorization", "Bearer " + token);
+                MockHttpServletResponse localResponse = new MockHttpServletResponse();
+
+                assertThat(interceptor.preHandle(request, localResponse, null)).isFalse();
+                assertThat(localResponse.getStatus()).isEqualTo(403);
+            }
+        }
+
+        @Test
+        @DisplayName("LIVE_TRADER 可以发送受底层门禁约束的实盘命令")
+        void liveTraderCanSendLiveCommand() throws Exception {
+            String token = loginAs("live", "password", "LIVE_TRADER");
+            request.setRequestURI("/api/admin/live-trading/orders");
+            request.setMethod("POST");
+            request.addHeader("Authorization", "Bearer " + token);
+
+            assertThat(interceptor.preHandle(request, response, null)).isTrue();
+        }
+
+        @Test
+        @DisplayName("LIVE_TRADER 不能解除熔断或发布配置")
+        void liveTraderCannotEscalateIntoRiskOrOperationsRoles() throws Exception {
+            String token = loginAs("live", "password", "LIVE_TRADER");
+            for (String path : new String[]{
+                    "/api/admin/risk/kill-switch",
+                    "/api/admin/configs/strategy/BTC/publish"}) {
+                MockHttpServletRequest localRequest = new MockHttpServletRequest();
+                localRequest.setRequestURI(path);
+                localRequest.setMethod("POST");
+                localRequest.addHeader("Authorization", "Bearer " + token);
+                MockHttpServletResponse localResponse = new MockHttpServletResponse();
+
+                assertThat(interceptor.preHandle(localRequest, localResponse, null)).isFalse();
+                assertThat(localResponse.getStatus()).isEqualTo(403);
+            }
         }
 
         @Test

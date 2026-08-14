@@ -28,4 +28,16 @@ public class DefaultStrategyContext implements StrategyContext {
     public List<Factor> getAllFactors(Instrument instrument, Timeframe timeframe) {
         return factorRegistry.calculateAll(instrument, timeframe);
     }
+
+    @Override
+    public Factor getFactorAsOf(String name, Instrument instrument, Timeframe timeframe,
+                                long asOfTimestamp) {
+        return factorRegistry.calculateAsOf(name, instrument, timeframe, asOfTimestamp);
+    }
+
+    @Override
+    public List<Factor> getAllFactorsAsOf(Instrument instrument, Timeframe timeframe,
+                                          long asOfTimestamp) {
+        return factorRegistry.calculateAllAsOf(instrument, timeframe, asOfTimestamp);
+    }
 }

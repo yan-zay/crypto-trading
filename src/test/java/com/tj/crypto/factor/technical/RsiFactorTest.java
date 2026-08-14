@@ -70,6 +70,6 @@ class RsiFactorTest {
     @Test
     @DisplayName("因子名称应为 RSI_14")
     void shouldReturnCorrectName() {
-        assertThat(rsiFactor.name()).isEqualTo("RSI_14");
+        assertThat(rsiFactor.name()).isEqualTo("RSI");
     }
 }
