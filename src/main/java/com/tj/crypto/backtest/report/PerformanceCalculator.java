@@ -58,8 +58,16 @@ public class PerformanceCalculator {
     public PerformanceReport calculate(List<Trade> trades, BigDecimal initialBalance,
                                         BigDecimal finalBalance, long startTime, long endTime,
                                         String assumptionsJson) {
+        return calculate(trades, initialBalance, finalBalance, startTime, endTime,
+                assumptionsJson, List.of());
+    }
+
+    /** 使用净值曲线计算时序风险指标。 */
+    public PerformanceReport calculate(List<Trade> trades, BigDecimal initialBalance,
+                                        BigDecimal finalBalance, long startTime, long endTime,
+                                        String assumptionsJson, List<EquityPoint> equityCurve) {
         if (trades.isEmpty()) {
-            return emptyReport(initialBalance, startTime, endTime);
+            return emptyReport(initialBalance, finalBalance, startTime, endTime, assumptionsJson);
         }
 
         int totalTrades = trades.size();
@@ -78,6 +86,7 @@ public class PerformanceCalculator {
         List<BigDecimal> perTradeReturns = new ArrayList<>();
 
         for (Trade trade : trades) {
+            BigDecimal netPnl = trade.netPnL();
             // 累计手续费
             if (trade.totalFee() != null) {
                 totalFees = totalFees.add(trade.totalFee());
@@ -88,20 +97,20 @@ public class PerformanceCalculator {
             // 每笔交易收益率 = PnL / (entryPrice * quantity)
             BigDecimal notional = trade.entryPrice().multiply(trade.quantity());
             if (notional.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal tradeReturn = trade.realizedPnL()
+                BigDecimal tradeReturn = netPnl
                         .divide(notional, HIGH_SCALE, RoundingMode.HALF_UP);
                 perTradeReturns.add(tradeReturn);
             }
 
-            if (trade.isProfitable()) {
+            if (netPnl.compareTo(BigDecimal.ZERO) > 0) {
                 winningTrades++;
-                totalWin = totalWin.add(trade.realizedPnL());
+                totalWin = totalWin.add(netPnl);
                 currentConsecutiveLosses = 0;
                 currentWinStreak++;
                 maxWinStreak = Math.max(maxWinStreak, currentWinStreak);
             } else {
                 losingTrades++;
-                totalLoss = totalLoss.add(trade.realizedPnL().abs());
+                totalLoss = totalLoss.add(netPnl.abs());
                 currentWinStreak = 0;
                 currentConsecutiveLosses++;
                 maxConsecutiveLosses = Math.max(maxConsecutiveLosses, currentConsecutiveLosses);
@@ -133,7 +142,7 @@ public class PerformanceCalculator {
                 : BigDecimal.valueOf(999.99);
 
         // 最大回撤
-        BigDecimal maxDrawdown = calculateMaxDrawdown(trades, initialBalance);
+        BigDecimal maxDrawdown = calculateMaxDrawdown(trades, initialBalance, equityCurve);
 
         // 平均交易时长
         BigDecimal avgTradeDuration = BigDecimal.valueOf(totalDuration / totalTrades);
@@ -142,15 +151,19 @@ public class PerformanceCalculator {
         long durationMillis = endTime - startTime;
         BigDecimal annualizedReturn = calculateAnnualizedReturn(totalReturn, durationMillis);
 
-        // 夏普比率 & 索提诺比率
-        BigDecimal sharpeRatio = calculateSharpe(perTradeReturns, durationMillis);
-        BigDecimal sortinoRatio = calculateSortino(perTradeReturns, durationMillis);
+        List<BigDecimal> periodicReturns = equityCurve == null || equityCurve.size() < 2
+                ? perTradeReturns : calculateDailyReturns(equityCurve);
+        BigDecimal sharpeRatio = calculateSharpe(periodicReturns,
+                equityCurve != null && equityCurve.size() >= 2);
+        BigDecimal sortinoRatio = calculateSortino(periodicReturns,
+                equityCurve != null && equityCurve.size() >= 2);
 
         // 卡玛比率
         BigDecimal calmarRatio = calculateCalmar(annualizedReturn, maxDrawdown);
 
         // 月度收益
-        Map<String, BigDecimal> monthlyReturns = calculateMonthlyReturns(trades);
+        Map<String, BigDecimal> monthlyReturns = calculateMonthlyReturns(
+                trades, initialBalance, equityCurve);
 
         return new PerformanceReport(
                 totalReturn, maxDrawdown, winRate,
@@ -182,50 +195,44 @@ public class PerformanceCalculator {
         return BigDecimal.valueOf(annReturn).setScale(SCALE, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateSharpe(List<BigDecimal> perTradeReturns, long durationMillis) {
-        if (perTradeReturns.isEmpty() || durationMillis <= 0) {
+    private BigDecimal calculateSharpe(List<BigDecimal> returns, boolean dailySeries) {
+        if (returns.size() < 2) {
             return BigDecimal.ZERO;
         }
-
-        // 每笔交易的无风险收益率 = 年化无风险 * (交易时长 / 年)
-        BigDecimal meanReturn = mean(perTradeReturns);
-        BigDecimal stdReturn = std(perTradeReturns, meanReturn);
+        BigDecimal meanReturn = mean(returns);
+        BigDecimal stdReturn = std(returns, meanReturn);
 
         if (stdReturn.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
 
-        // 将年化无风险利率转换为每笔交易的无风险利率
-        BigDecimal avgDurationMillis = BigDecimal.valueOf(durationMillis)
-                .divide(BigDecimal.valueOf(perTradeReturns.size()), HIGH_SCALE, RoundingMode.HALF_UP);
-        BigDecimal riskFreePerTrade = RISK_FREE_RATE_ANNUAL
-                .multiply(avgDurationMillis)
-                .divide(BigDecimal.valueOf(MILLIS_PER_YEAR), HIGH_SCALE, RoundingMode.HALF_UP);
-
-        return meanReturn.subtract(riskFreePerTrade)
-                .divide(stdReturn, SCALE, RoundingMode.HALF_UP);
+        BigDecimal riskFreePeriod = dailySeries
+                ? RISK_FREE_RATE_ANNUAL.divide(BigDecimal.valueOf(365), HIGH_SCALE, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        BigDecimal ratio = meanReturn.subtract(riskFreePeriod)
+                .divide(stdReturn, HIGH_SCALE, RoundingMode.HALF_UP);
+        return dailySeries ? ratio.multiply(BigDecimal.valueOf(Math.sqrt(365)))
+                .setScale(SCALE, RoundingMode.HALF_UP) : ratio.setScale(SCALE, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateSortino(List<BigDecimal> perTradeReturns, long durationMillis) {
-        if (perTradeReturns.isEmpty() || durationMillis <= 0) {
+    private BigDecimal calculateSortino(List<BigDecimal> returns, boolean dailySeries) {
+        if (returns.size() < 2) {
             return BigDecimal.ZERO;
         }
-
-        BigDecimal meanReturn = mean(perTradeReturns);
-        BigDecimal downsideStd = downsideStd(perTradeReturns, meanReturn);
+        BigDecimal meanReturn = mean(returns);
+        BigDecimal downsideStd = downsideStd(returns, BigDecimal.ZERO);
 
         if (downsideStd.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }
 
-        BigDecimal avgDurationMillis = BigDecimal.valueOf(durationMillis)
-                .divide(BigDecimal.valueOf(perTradeReturns.size()), HIGH_SCALE, RoundingMode.HALF_UP);
-        BigDecimal riskFreePerTrade = RISK_FREE_RATE_ANNUAL
-                .multiply(avgDurationMillis)
-                .divide(BigDecimal.valueOf(MILLIS_PER_YEAR), HIGH_SCALE, RoundingMode.HALF_UP);
-
-        return meanReturn.subtract(riskFreePerTrade)
-                .divide(downsideStd, SCALE, RoundingMode.HALF_UP);
+        BigDecimal riskFreePeriod = dailySeries
+                ? RISK_FREE_RATE_ANNUAL.divide(BigDecimal.valueOf(365), HIGH_SCALE, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        BigDecimal ratio = meanReturn.subtract(riskFreePeriod)
+                .divide(downsideStd, HIGH_SCALE, RoundingMode.HALF_UP);
+        return dailySeries ? ratio.multiply(BigDecimal.valueOf(Math.sqrt(365)))
+                .setScale(SCALE, RoundingMode.HALF_UP) : ratio.setScale(SCALE, RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateCalmar(BigDecimal annualizedReturn, BigDecimal maxDrawdown) {
@@ -235,15 +242,39 @@ public class PerformanceCalculator {
         return annualizedReturn.divide(maxDrawdown, SCALE, RoundingMode.HALF_UP);
     }
 
-    private Map<String, BigDecimal> calculateMonthlyReturns(List<Trade> trades) {
-        Map<String, BigDecimal> monthly = new TreeMap<>();
+    private Map<String, BigDecimal> calculateMonthlyReturns(List<Trade> trades,
+                                                             BigDecimal initialBalance,
+                                                             List<EquityPoint> equityCurve) {
+        if (equityCurve != null && !equityCurve.isEmpty()) {
+            Map<String, List<BigDecimal>> grouped = new TreeMap<>();
+            for (EquityPoint point : equityCurve) {
+                String month = Instant.ofEpochMilli(point.timestamp())
+                        .atZone(ZoneId.of("UTC")).format(MONTH_FMT);
+                grouped.computeIfAbsent(month, ignored -> new ArrayList<>()).add(point.equity());
+            }
+            Map<String, BigDecimal> returns = new TreeMap<>();
+            grouped.forEach((month, values) -> {
+                BigDecimal first = values.get(0);
+                BigDecimal last = values.get(values.size() - 1);
+                BigDecimal value = first.signum() == 0 ? BigDecimal.ZERO
+                        : last.subtract(first).divide(first, HIGH_SCALE, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100));
+                returns.put(month, value.setScale(SCALE, RoundingMode.HALF_UP));
+            });
+            return returns;
+        }
+        Map<String, BigDecimal> monthlyPnl = new TreeMap<>();
         for (Trade trade : trades) {
             String month = Instant.ofEpochMilli(trade.exitTime())
                     .atZone(ZoneId.of("UTC"))
                     .format(MONTH_FMT);
-            monthly.merge(month, trade.realizedPnL(), BigDecimal::add);
+            monthlyPnl.merge(month, trade.netPnL(), BigDecimal::add);
         }
-        return monthly;
+        Map<String, BigDecimal> returns = new TreeMap<>();
+        monthlyPnl.forEach((month, pnl) -> returns.put(month,
+                pnl.divide(initialBalance, HIGH_SCALE, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100)).setScale(SCALE, RoundingMode.HALF_UP)));
+        return returns;
     }
 
     private BigDecimal mean(List<BigDecimal> values) {
@@ -285,13 +316,17 @@ public class PerformanceCalculator {
                 .setScale(HIGH_SCALE, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal calculateMaxDrawdown(List<Trade> trades, BigDecimal initialBalance) {
+    private BigDecimal calculateMaxDrawdown(List<Trade> trades, BigDecimal initialBalance,
+                                            List<EquityPoint> equityCurve) {
+        if (equityCurve != null && !equityCurve.isEmpty()) {
+            return calculateMaxDrawdownFromEquity(equityCurve);
+        }
         BigDecimal peak = initialBalance;
         BigDecimal equity = initialBalance;
         BigDecimal maxDrawdown = BigDecimal.ZERO;
 
         for (Trade trade : trades) {
-            equity = equity.add(trade.realizedPnL());
+            equity = equity.add(trade.netPnL());
             if (equity.compareTo(peak) > 0) {
                 peak = equity;
             }
@@ -306,15 +341,53 @@ public class PerformanceCalculator {
         return maxDrawdown;
     }
 
-    private PerformanceReport emptyReport(BigDecimal initialBalance, long startTime, long endTime) {
+    private BigDecimal calculateMaxDrawdownFromEquity(List<EquityPoint> equityCurve) {
+        BigDecimal peak = BigDecimal.ZERO;
+        BigDecimal maxDrawdown = BigDecimal.ZERO;
+        for (EquityPoint point : equityCurve.stream()
+                .sorted(java.util.Comparator.comparingLong(EquityPoint::timestamp)).toList()) {
+            BigDecimal equity = point.equity();
+            if (equity.compareTo(peak) > 0) peak = equity;
+            if (peak.signum() <= 0) continue;
+            BigDecimal drawdown = peak.subtract(equity)
+                    .divide(peak, SCALE, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100));
+            if (drawdown.compareTo(maxDrawdown) > 0) maxDrawdown = drawdown;
+        }
+        return maxDrawdown;
+    }
+
+    private List<BigDecimal> calculateDailyReturns(List<EquityPoint> equityCurve) {
+        Map<Long, BigDecimal> dailyClose = new TreeMap<>();
+        long dayMillis = 86_400_000L;
+        equityCurve.stream()
+                .sorted(java.util.Comparator.comparingLong(EquityPoint::timestamp))
+                .forEach(point -> dailyClose.put(point.timestamp() / dayMillis, point.equity()));
+        List<BigDecimal> values = new ArrayList<>(dailyClose.values());
+        List<BigDecimal> returns = new ArrayList<>();
+        for (int i = 1; i < values.size(); i++) {
+            BigDecimal previous = values.get(i - 1);
+            if (previous.signum() != 0) {
+                returns.add(values.get(i).subtract(previous)
+                        .divide(previous, HIGH_SCALE, RoundingMode.HALF_UP));
+            }
+        }
+        return returns;
+    }
+
+    private PerformanceReport emptyReport(BigDecimal initialBalance, BigDecimal finalBalance,
+                                          long startTime, long endTime, String assumptionsJson) {
+        BigDecimal totalReturn = finalBalance.subtract(initialBalance)
+                .divide(initialBalance, SCALE, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
         return new PerformanceReport(
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                totalReturn, BigDecimal.ZERO, BigDecimal.ZERO,
                 0, 0, 0,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0,
-                initialBalance, initialBalance, startTime, endTime,
+                initialBalance, finalBalance, startTime, endTime,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, 0, 0, Map.of(),
-                BigDecimal.ZERO
+                BigDecimal.ZERO, assumptionsJson
         );
     }
 }

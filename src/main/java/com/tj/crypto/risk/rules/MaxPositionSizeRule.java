@@ -1,6 +1,6 @@
 package com.tj.crypto.risk.rules;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
@@ -18,10 +18,10 @@ import java.math.RoundingMode;
 @Component
 public class MaxPositionSizeRule implements RiskRule {
 
-    private final BigDecimal maxSizePct;
+    private final RiskProperties riskProperties;
 
     public MaxPositionSizeRule(RiskProperties riskProperties) {
-        this.maxSizePct = riskProperties.getMaxSizePct();
+        this.riskProperties = riskProperties;
     }
 
     @Override
@@ -30,7 +30,9 @@ public class MaxPositionSizeRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
+    public RiskCheckResult check(Order order, TradingAccount account) {
+        if (order.reduceOnly()) return RiskCheckResult.passed();
+        BigDecimal maxSizePct = riskProperties.getMaxSizePct();
         BigDecimal orderValue = order.quantity().multiply(order.price() != null ? order.price() : BigDecimal.ZERO);
         BigDecimal maxValue = account.getBalance()
                 .multiply(maxSizePct)

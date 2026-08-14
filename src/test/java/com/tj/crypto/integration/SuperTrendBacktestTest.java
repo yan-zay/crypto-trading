@@ -30,6 +30,7 @@ import com.tj.crypto.strategy.impl.SuperTrendStrategy;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -55,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>注意：此测试需要网络连接访问 Binance API（通过 SOCKS 代理）。
  */
+@Tag("external")
 class SuperTrendBacktestTest {
 
     private static final String SYMBOL = "BTCUSDT";
@@ -110,7 +112,7 @@ class SuperTrendBacktestTest {
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
-                new PositionSizer(),
+                new PositionSizer(riskProperties),
                 new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
 

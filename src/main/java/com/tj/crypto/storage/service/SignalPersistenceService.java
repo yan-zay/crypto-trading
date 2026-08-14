@@ -4,6 +4,7 @@ import com.tj.crypto.storage.converter.SignalEventConverter;
 import com.tj.crypto.storage.entity.SignalEventDO;
 import com.tj.crypto.storage.mapper.SignalEventMapper;
 import com.tj.crypto.strategy.core.SignalEvent;
+import com.tj.crypto.strategy.core.SignalListener;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -16,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @Service
 @AllArgsConstructor
-public class SignalPersistenceService {
+public class SignalPersistenceService implements SignalListener {
 
     private final SignalEventMapper signalEventMapper;
     private final ThreadPoolTaskExecutor tjTaskExecutor;
@@ -34,5 +35,10 @@ public class SignalPersistenceService {
                 log.error("Failed to persist signal event: {}", e.getMessage(), e);
             }
         });
+    }
+
+    @Override
+    public void onSignal(SignalEvent signal) {
+        persistSignalAsync(signal);
     }
 }

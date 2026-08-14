@@ -1,6 +1,7 @@
 package com.tj.crypto.backtest.portfolio;
 
 import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.InstrumentId;
 import com.tj.crypto.common.domain.OrderSide;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,13 +31,24 @@ import java.util.Map;
  * - 支持资金费率结算。
  */
 @Slf4j
-public class FuturesAccount {
+public class FuturesAccount implements TradingAccount {
+
+    /** 默认杠杆倍数（通过 TradingAccount 接口开仓时使用） */
+    private static final int DEFAULT_LEVERAGE = 1;
+
+    /** 默认开仓方法（TradingAccount 接口实现，使用默认杠杆） */
+    @Override
+    public boolean openPosition(Instrument instrument, OrderSide side,
+                                BigDecimal quantity, BigDecimal price, long timestamp) {
+        return openPosition(instrument, side, quantity, price, DEFAULT_LEVERAGE,
+                MarginMode.CROSSED, timestamp);
+    }
 
     private static final int SCALE = 8;
 
     private BigDecimal balance;
     private final BigDecimal initialBalance;
-    private final Map<String, FuturesPosition> positions = new HashMap<>();
+    private final Map<InstrumentId, FuturesPosition> positions = new HashMap<>();
     private final List<Trade> trades = new ArrayList<>();
     private final FeeModel feeModel;
     private BigDecimal totalFeesPaid = BigDecimal.ZERO;
@@ -69,11 +81,17 @@ public class FuturesAccount {
     public boolean openPosition(Instrument instrument, OrderSide side,
                                 BigDecimal quantity, BigDecimal price,
                                 int leverage, MarginMode marginMode) {
+        return openPosition(instrument, side, quantity, price, leverage, marginMode, 0L);
+    }
+
+    public boolean openPosition(Instrument instrument, OrderSide side,
+                                BigDecimal quantity, BigDecimal price,
+                                int leverage, MarginMode marginMode, long timestamp) {
         if (leverage < 1) {
             throw new IllegalArgumentException("Leverage must be >= 1, got: " + leverage);
         }
 
-        String key = instrument.symbol();
+        InstrumentId key = instrument.id();
         if (positions.containsKey(key)) {
             log.warn("Position already exists for {}", key);
             return false;
@@ -101,7 +119,8 @@ public class FuturesAccount {
         balance = balance.subtract(openFee);
         totalFeesPaid = totalFeesPaid.add(openFee);
 
-        FuturesPosition position = buildPosition(instrument, side, quantity, price, leverage, marginMode, margin);
+        FuturesPosition position = buildPosition(
+                instrument, side, quantity, price, leverage, marginMode, margin, timestamp);
         positions.put(key, position);
         log.debug("Opened {} {} {}x {} @ ${}, margin={}, fee={}",
                 side, instrument.symbol(), leverage, quantity, price, margin, openFee);
@@ -117,13 +136,18 @@ public class FuturesAccount {
      * @return 交易记录，如果没有持仓返回 null
      */
     public Trade closePosition(Instrument instrument, BigDecimal price) {
-        String key = instrument.symbol();
+        return closePosition(instrument, price, 0L);
+    }
+
+    @Override
+    public Trade closePosition(Instrument instrument, BigDecimal price, long timestamp) {
+        InstrumentId key = instrument.id();
         FuturesPosition pos = positions.remove(key);
         if (pos == null) {
             return null;
         }
 
-        return settlePosition(pos, price);
+        return settlePosition(pos, price, timestamp);
     }
 
     /**
@@ -135,7 +159,11 @@ public class FuturesAccount {
      * @return 交易记录
      */
     public Trade liquidatePosition(Instrument instrument, BigDecimal price) {
-        String key = instrument.symbol();
+        return liquidatePosition(instrument, price, 0L);
+    }
+
+    public Trade liquidatePosition(Instrument instrument, BigDecimal price, long timestamp) {
+        InstrumentId key = instrument.id();
         FuturesPosition pos = positions.remove(key);
         if (pos == null) {
             return null;
@@ -164,8 +192,8 @@ public class FuturesAccount {
                 pos.quantity(),
                 pos.entryPrice(),
                 price,
-                0L,
-                0L,
+                pos.entryTime(),
+                timestamp,
                 pnl,
                 closeFee
         );
@@ -183,7 +211,7 @@ public class FuturesAccount {
      * @param fundingRate  资金费率（如 0.0001 表示 0.01%）
      */
     public void applyFundingRate(Instrument instrument, BigDecimal fundingRate) {
-        String key = instrument.symbol();
+        InstrumentId key = instrument.id();
         FuturesPosition pos = positions.get(key);
         if (pos == null) {
             return;
@@ -210,15 +238,36 @@ public class FuturesAccount {
                 instrument.symbol(), fundingRate, fundingAmount, adjustment);
     }
 
+    @Override
+    public BigDecimal getPositionValue(Instrument instrument, BigDecimal currentPrice) {
+        FuturesPosition pos = positions.get(instrument.id());
+        if (pos == null) {
+            return BigDecimal.ZERO;
+        }
+        return pos.quantity().multiply(currentPrice);
+    }
+
+    @Override
+    public BigDecimal getTotalPositionValue(Map<String, BigDecimal> currentPrices) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (FuturesPosition position : positions.values()) {
+            BigDecimal price = resolvePrice(currentPrices, position.instrument());
+            if (price != null) {
+                total = total.add(position.quantity().multiply(price));
+            }
+        }
+        return total.setScale(SCALE, RoundingMode.HALF_UP);
+    }
+
     /**
      * 获取所有持仓的未实现盈亏总和。
      */
     public BigDecimal getUnrealizedPnL(Map<String, BigDecimal> currentPrices) {
         BigDecimal total = BigDecimal.ZERO;
-        for (Map.Entry<String, FuturesPosition> entry : positions.entrySet()) {
-            BigDecimal price = currentPrices.get(entry.getKey());
+        for (FuturesPosition position : positions.values()) {
+            BigDecimal price = resolvePrice(currentPrices, position.instrument());
             if (price != null) {
-                total = total.add(entry.getValue().calculateUnrealizedPnL(price));
+                total = total.add(position.calculateUnrealizedPnL(price));
             }
         }
         return total.setScale(SCALE, RoundingMode.HALF_UP);
@@ -231,6 +280,27 @@ public class FuturesAccount {
     public BigDecimal getTotalEquity(Map<String, BigDecimal> currentPrices) {
         return balance.add(getUnrealizedPnL(currentPrices))
                 .setScale(SCALE, RoundingMode.HALF_UP);
+    }
+
+    @Override
+    public AccountRiskSnapshot riskSnapshot(Instrument instrument, BigDecimal currentPrice) {
+        BigDecimal gross = BigDecimal.ZERO;
+        BigDecimal target = BigDecimal.ZERO;
+        BigDecimal unrealized = BigDecimal.ZERO;
+        for (FuturesPosition position : positions.values()) {
+            BigDecimal mark = position.instrument().id().equals(instrument.id())
+                    ? currentPrice : position.entryPrice();
+            BigDecimal value = position.quantity().multiply(mark).abs();
+            gross = gross.add(value);
+            unrealized = unrealized.add(position.calculateUnrealizedPnL(mark));
+            if (position.instrument().id().equals(instrument.id())) {
+                target = value;
+            }
+        }
+        return new AccountRiskSnapshot(
+                balance.add(unrealized).setScale(SCALE, RoundingMode.HALF_UP),
+                calculateAvailableBalance(), gross.setScale(SCALE, RoundingMode.HALF_UP),
+                target.setScale(SCALE, RoundingMode.HALF_UP));
     }
 
     /**
@@ -264,7 +334,7 @@ public class FuturesAccount {
      * @return 强平价格，无持仓返回 null
      */
     public BigDecimal getLiquidationPrice(Instrument instrument) {
-        FuturesPosition pos = positions.get(instrument.symbol());
+        FuturesPosition pos = positions.get(instrument.id());
         return pos != null ? pos.liquidationPrice() : null;
     }
 
@@ -298,7 +368,8 @@ public class FuturesAccount {
 
     private FuturesPosition buildPosition(Instrument instrument, OrderSide side,
                                           BigDecimal quantity, BigDecimal price,
-                                          int leverage, MarginMode marginMode, BigDecimal margin) {
+                                          int leverage, MarginMode marginMode, BigDecimal margin,
+                                          long timestamp) {
         BigDecimal positionValue = quantity.multiply(price);
         BigDecimal maintenanceMargin = positionValue.multiply(new BigDecimal("0.005"))
                 .setScale(SCALE, RoundingMode.HALF_UP);
@@ -314,12 +385,13 @@ public class FuturesAccount {
 
         return new FuturesPosition(
                 instrument, side, quantity, price,
+                timestamp,
                 leverage, marginMode, margin,
                 BigDecimal.ZERO, liquidationPrice
         );
     }
 
-    private Trade settlePosition(FuturesPosition pos, BigDecimal price) {
+    private Trade settlePosition(FuturesPosition pos, BigDecimal price, long timestamp) {
         BigDecimal pnl = pos.calculateUnrealizedPnL(price);
 
         // 计算平仓手续费
@@ -339,8 +411,8 @@ public class FuturesAccount {
                 pos.quantity(),
                 pos.entryPrice(),
                 price,
-                0L,
-                0L,
+                pos.entryTime(),
+                timestamp,
                 pnl,
                 closeFee
         );
@@ -354,9 +426,31 @@ public class FuturesAccount {
 
     public BigDecimal getBalance() { return balance; }
     public BigDecimal getInitialBalance() { return initialBalance; }
-    public Map<String, FuturesPosition> getPositions() { return Map.copyOf(positions); }
+    public Map<String, FuturesPosition> getPositions() {
+        Map<String, FuturesPosition> view = new HashMap<>();
+        positions.forEach((key, value) -> view.put(key.value(), value));
+        return Map.copyOf(view);
+    }
     public List<Trade> getTrades() { return List.copyOf(trades); }
-    public boolean hasPosition(Instrument instrument) { return positions.containsKey(instrument.symbol()); }
+    public boolean hasPosition(Instrument instrument) { return positions.containsKey(instrument.id()); }
     public BigDecimal getTotalFeesPaid() { return totalFeesPaid; }
+
+    @Override
+    public OrderSide getPositionSide(Instrument instrument) {
+        FuturesPosition pos = positions.get(instrument.id());
+        return pos != null ? pos.side() : null;
+    }
+
+    @Override
+    public BigDecimal getPositionQuantity(Instrument instrument) {
+        FuturesPosition pos = positions.get(instrument.id());
+        return pos != null ? pos.quantity() : BigDecimal.ZERO;
+    }
+
     public BigDecimal getTotalFundingPaid() { return totalFundingPaid; }
+
+    private BigDecimal resolvePrice(Map<String, BigDecimal> prices, Instrument instrument) {
+        BigDecimal canonical = prices.get(instrument.id().value());
+        return canonical != null ? canonical : prices.get(instrument.symbol());
+    }
 }

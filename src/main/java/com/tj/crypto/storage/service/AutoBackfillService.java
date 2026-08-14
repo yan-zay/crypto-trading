@@ -4,7 +4,8 @@ import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.Timeframe;
-import com.tj.crypto.marketdata.backfill.BinanceHistoricalDataProvider;
+import com.tj.crypto.config.properties.MarketUniverseProperties;
+import com.tj.crypto.marketdata.backfill.HistoricalDataProviderRegistry;
 import com.tj.crypto.marketdata.model.BarEvent;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,8 +27,9 @@ public class AutoBackfillService {
     private static final double COVERAGE_THRESHOLD = 95.0;
 
     private final DataCoverageService dataCoverageService;
-    private final BinanceHistoricalDataProvider historicalDataProvider;
+    private final HistoricalDataProviderRegistry providerRegistry;
     private final BarEventPersistenceService barEventPersistenceService;
+    private final MarketUniverseProperties marketUniverse;
 
     /**
      * 检查覆盖率并在需要时自动回填。
@@ -41,10 +43,25 @@ public class AutoBackfillService {
      * @return 实际回填的 K 线数量，如果无需回填则返回 0
      */
     public int backfillIfNeeded(String symbol, String timeframe, int daysBack) {
-        long now = System.currentTimeMillis();
-        long from = now - Duration.ofDays(daysBack).toMillis();
+        return backfillIfNeeded(Exchange.BINANCE, MarketType.PERPETUAL,
+                symbol, timeframe, daysBack);
+    }
 
-        CoverageReport report = dataCoverageService.checkCoverage(symbol, timeframe, from, now);
+    /** 按指定交易所和市场回填，当前支持 Binance 与 OKX。 */
+    public int backfillIfNeeded(Exchange exchange, MarketType marketType,
+                                String symbol, String timeframe, int daysBack) {
+        if (daysBack < 1 || daysBack > 3650) {
+            throw new IllegalArgumentException("daysBack must be between 1 and 3650");
+        }
+        marketUniverse.validate(exchange, marketType, symbol);
+        Timeframe tf = Timeframe.fromCode(timeframe);
+        long currentBucket = (System.currentTimeMillis() / tf.getMillis()) * tf.getMillis();
+        long to = currentBucket - tf.getMillis();
+        long from = to - Duration.ofDays(daysBack).toMillis() + tf.getMillis();
+        Instrument instrument = Instrument.of(exchange, marketType,
+                MarketUniverseProperties.normalizeSymbol(symbol));
+
+        CoverageReport report = dataCoverageService.checkCoverage(instrument, timeframe, from, to);
 
         if (report.coveragePct() >= COVERAGE_THRESHOLD) {
             log.info("Coverage {}% meets threshold for {} {}, skipping backfill",
@@ -55,12 +72,11 @@ public class AutoBackfillService {
         log.info("Coverage {}% below threshold {}% for {} {}, starting backfill ({} gaps)",
                 report.coveragePct(), COVERAGE_THRESHOLD, symbol, timeframe, report.gaps().size());
 
-        Timeframe tf = Timeframe.fromCode(timeframe);
-        Instrument instrument = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, symbol);
         int totalFilled = 0;
 
         for (CoverageReport.TimeGap gap : report.gaps()) {
-            List<BarEvent> bars = historicalDataProvider.loadBars(instrument, tf, gap.from(), gap.to());
+            List<BarEvent> bars = providerRegistry.require(exchange)
+                    .loadBars(instrument, tf, gap.from(), gap.to());
             if (!bars.isEmpty()) {
                 barEventPersistenceService.saveAll(bars);
                 totalFilled += bars.size();

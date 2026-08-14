@@ -29,6 +29,8 @@ public enum OrderStatus {
     PARTIALLY_FILLED("partially_filled", "部分成交", true),
     FILLED("filled", "已成交", false),
     CANCEL_REQUESTED("cancel_requested", "撤单请求中", true),
+    /** Venue outcome is temporarily indeterminate and must be reconciled before retrying. */
+    UNKNOWN("unknown", "状态待对账", true),
     CANCELLED("cancelled", "已取消", false),
     REJECTED("rejected", "已拒绝", false),
     EXPIRED("expired", "已过期", false),

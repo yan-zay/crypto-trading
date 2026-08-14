@@ -44,6 +44,26 @@ class OkHttpCoinglassWebSocketClientTest {
         eventBus.subscribe(LiquidationEvent.class, receivedEvent::set);
     }
 
+    @Test
+    void encodesApiKeyInConfiguredWebSocketUrl() {
+        assertThat(client.buildConnectionUrl("key+with/slash"))
+                .isEqualTo("wss://open-ws.coinglass.com/ws-api?cg-api-key=key%2Bwith%2Fslash"); // gitleaks:allow
+    }
+
+    @Test
+    void reportsMissingApiKeyInConnectorHealth() {
+        CoinglassProperties properties = new CoinglassProperties();
+        properties.setApiKey(" ");
+        OkHttpCoinglassWebSocketClient noKeyClient = new OkHttpCoinglassWebSocketClient(
+                new OkHttpClient(), properties, new CoinglassLiquidationNormalizer(),
+                new InMemoryEventBus(), new RawMessagePersistenceService(null));
+
+        noKeyClient.connect();
+
+        assertThat(noKeyClient.health().lastError()).contains("COINGLASS_API_KEY");
+        assertThat(noKeyClient.isConnected()).isFalse();
+    }
+
     @Nested
     @DisplayName("liquidation 消息处理")
     class LiquidationMessageHandling {

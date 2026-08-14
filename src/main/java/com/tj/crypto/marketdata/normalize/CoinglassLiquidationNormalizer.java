@@ -42,9 +42,12 @@ public class CoinglassLiquidationNormalizer {
             try {
                 side = OrderSide.fromCode(order.getSide());
             } catch (IllegalArgumentException e) {
-                log.warn("Unknown side code: {}, defaulting to LONG", order.getSide());
-                side = OrderSide.LONG;
+                log.warn("Dropping Coinglass liquidation with unknown side code: {}", order.getSide());
+                return null;
             }
+
+            if (order.getPrice() == null || order.getVolUsd() == null
+                    || order.getTime() <= 0 || normalizedSymbol == null) return null;
 
             EventMetadata metadata = EventMetadata.of(Exchange.COINGLASS, order.getTime());
 

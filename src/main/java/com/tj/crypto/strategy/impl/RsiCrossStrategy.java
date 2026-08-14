@@ -1,6 +1,7 @@
 package com.tj.crypto.strategy.impl;
 
 import com.tj.crypto.factor.core.Factor;
+import com.tj.crypto.common.domain.MarketSeriesKey;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.core.SignalEvent;
@@ -8,6 +9,7 @@ import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
 import com.tj.crypto.strategy.core.StrategyContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -27,13 +29,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>与 MACD 策略互补：MACD 捕捉趋势转折，RSI 捕捉超买超卖。
  */
 @Slf4j
+@Component
 public class RsiCrossStrategy implements Strategy {
 
     private static final BigDecimal OVERSOLD_THRESHOLD = BigDecimal.valueOf(30);
     private static final BigDecimal OVERBOUGHT_THRESHOLD = BigDecimal.valueOf(70);
 
     /** 按交易对存储上一次 RSI 值 */
-    private final Map<String, BigDecimal> lastRsiMap = new ConcurrentHashMap<>();
+    private final Map<MarketSeriesKey, BigDecimal> lastRsiMap = new ConcurrentHashMap<>();
 
     private final String rsiFactorName;
 
@@ -41,13 +44,13 @@ public class RsiCrossStrategy implements Strategy {
      * 使用默认 RSI 周期（14）。
      */
     public RsiCrossStrategy() {
-        this("RSI_14");
+        this("RSI");
     }
 
     /**
      * 使用自定义 RSI 因子名称。
      *
-     * @param rsiFactorName RSI 因子名称（如 "RSI_14"、"RSI_7"）
+     * @param rsiFactorName RSI 因子名称（如 "RSI"、"RSI_7"）
      */
     public RsiCrossStrategy(String rsiFactorName) {
         this.rsiFactorName = rsiFactorName;
@@ -75,7 +78,7 @@ public class RsiCrossStrategy implements Strategy {
         }
 
         BigDecimal currentRsi = rsiFactor.value();
-        String key = bar.instrument().symbol();
+        MarketSeriesKey key = MarketSeriesKey.of(bar.instrument(), bar.timeframe());
         BigDecimal lastRsi = lastRsiMap.get(key);
         SignalEvent signal = null;
 

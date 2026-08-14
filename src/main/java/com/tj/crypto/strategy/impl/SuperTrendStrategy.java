@@ -1,6 +1,7 @@
 package com.tj.crypto.strategy.impl;
 
 import com.tj.crypto.factor.core.Factor;
+import com.tj.crypto.common.domain.MarketSeriesKey;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.core.SignalEvent;
@@ -8,6 +9,7 @@ import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
 import com.tj.crypto.strategy.core.StrategyContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -28,12 +30,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * 与 MACD（趋势转折）、RSI（超买超卖）、Bollinger（波动率突破）互补。
  */
 @Slf4j
+@Component
 public class SuperTrendStrategy implements Strategy {
 
     private static final String SUPERTREND_FACTOR = "SUPERTREND";
 
     /** 按交易对存储上一次 SuperTrend 值（+1 或 -1） */
-    private final Map<String, BigDecimal> lastTrendMap = new ConcurrentHashMap<>();
+    private final Map<MarketSeriesKey, BigDecimal> lastTrendMap = new ConcurrentHashMap<>();
 
     @Override
     public String name() {
@@ -57,7 +60,7 @@ public class SuperTrendStrategy implements Strategy {
         }
 
         BigDecimal currentTrend = stFactor.value();
-        String key = bar.instrument().symbol();
+        MarketSeriesKey key = MarketSeriesKey.of(bar.instrument(), bar.timeframe());
         BigDecimal lastTrend = lastTrendMap.get(key);
         SignalEvent signal = null;
 

@@ -60,8 +60,15 @@ public final class OrderStateMachine {
                     OrderStatus.EXPIRED
             )),
             Map.entry(OrderStatus.CANCEL_REQUESTED, Set.of(
+                    OrderStatus.PARTIALLY_FILLED,
                     OrderStatus.CANCELLED,
                     OrderStatus.FILLED
+            )),
+            Map.entry(OrderStatus.UNKNOWN, Set.of(
+                    OrderStatus.ACKNOWLEDGED,
+                    OrderStatus.CANCEL_REQUESTED,
+                    OrderStatus.REJECTED,
+                    OrderStatus.EXPIRED
             ))
     );
 
@@ -78,19 +85,26 @@ public final class OrderStateMachine {
      * @throws IllegalStateException 如果转换不合法
      */
     public static Order transition(Order order, OrderEvent event) {
+        if (!order.orderId().equals(event.orderId())) {
+            throw new IllegalArgumentException("Order event belongs to a different order");
+        }
         OrderStatus currentStatus = order.status();
         OrderStatus targetStatus = resolveTargetStatus(currentStatus, event);
 
         validateTransition(currentStatus, targetStatus);
+        validateFill(order, event);
 
         return switch (event.eventType()) {
+            case CREATED -> throw new IllegalArgumentException(
+                    "CREATED 是订单初始审计事件，不触发状态转换");
             case SUBMITTED -> new Order(
                     order.orderId(), order.clientOrderId(),
                     order.instrument(), order.side(), order.type(),
                     order.quantity(), order.price(),
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.SUBMITTED, OrderRejectReason.NONE,
-                    order.createdAt(), event.timestamp(), order.filledAt(), order.cancelledAt()
+                    order.createdAt(), event.timestamp(), order.filledAt(), order.cancelledAt(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
 
             case ACKNOWLEDGED -> new Order(
@@ -99,7 +113,8 @@ public final class OrderStateMachine {
                     order.quantity(), order.price(),
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.ACKNOWLEDGED, OrderRejectReason.NONE,
-                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt()
+                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
 
             case PARTIALLY_FILLED -> {
@@ -114,7 +129,8 @@ public final class OrderStateMachine {
                         order.quantity(), order.price(),
                         newFilled, newAvgPrice,
                         OrderStatus.PARTIALLY_FILLED, OrderRejectReason.NONE,
-                        order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt()
+                        order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt(),
+                        order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
                 );
             }
 
@@ -130,7 +146,8 @@ public final class OrderStateMachine {
                         order.quantity(), order.price(),
                         newFilled, newAvgPrice,
                         OrderStatus.FILLED, OrderRejectReason.NONE,
-                        order.createdAt(), order.submittedAt(), event.timestamp(), order.cancelledAt()
+                        order.createdAt(), order.submittedAt(), event.timestamp(), order.cancelledAt(),
+                        order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
                 );
             }
 
@@ -140,7 +157,8 @@ public final class OrderStateMachine {
                     order.quantity(), order.price(),
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.CANCEL_REQUESTED, OrderRejectReason.NONE,
-                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt()
+                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
 
             case CANCELLED -> new Order(
@@ -149,7 +167,8 @@ public final class OrderStateMachine {
                     order.quantity(), order.price(),
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.CANCELLED, OrderRejectReason.NONE,
-                    order.createdAt(), order.submittedAt(), order.filledAt(), event.timestamp()
+                    order.createdAt(), order.submittedAt(), order.filledAt(), event.timestamp(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
 
             case REJECTED -> new Order(
@@ -159,7 +178,8 @@ public final class OrderStateMachine {
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.REJECTED, event.rejectReason() != null
                             ? event.rejectReason() : OrderRejectReason.NONE,
-                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt()
+                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
 
             case EXPIRED -> new Order(
@@ -168,9 +188,31 @@ public final class OrderStateMachine {
                     order.quantity(), order.price(),
                     order.filledQuantity(), order.avgFillPrice(),
                     OrderStatus.EXPIRED, OrderRejectReason.NONE,
-                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt()
+                    order.createdAt(), order.submittedAt(), order.filledAt(), order.cancelledAt(),
+                    order.strategyId(), order.tradeSide(), order.positionSide(), order.reduceOnly()
             );
         };
+    }
+
+    private static void validateFill(Order order, OrderEvent event) {
+        if (event.eventType() != OrderEvent.EventType.FILLED
+                && event.eventType() != OrderEvent.EventType.PARTIALLY_FILLED) return;
+        if (event.fillPrice() == null || event.fillPrice().signum() <= 0
+                || event.fillQuantity() == null || event.fillQuantity().signum() <= 0) {
+            throw new IllegalArgumentException("Fill price and quantity must be positive");
+        }
+        BigDecimal remaining = order.quantity().subtract(order.filledQuantity());
+        if (event.fillQuantity().compareTo(remaining) > 0) {
+            throw new IllegalArgumentException("Fill quantity exceeds order remainder");
+        }
+        if (event.eventType() == OrderEvent.EventType.PARTIALLY_FILLED
+                && event.fillQuantity().compareTo(remaining) >= 0) {
+            throw new IllegalArgumentException("Partial fill must leave a positive remainder");
+        }
+        if (event.eventType() == OrderEvent.EventType.FILLED
+                && event.fillQuantity().compareTo(remaining) != 0) {
+            throw new IllegalArgumentException("Final fill must consume the full remainder");
+        }
     }
 
     /**
@@ -192,6 +234,8 @@ public final class OrderStateMachine {
      */
     private static OrderStatus resolveTargetStatus(OrderStatus current, OrderEvent event) {
         return switch (event.eventType()) {
+            case CREATED -> throw new IllegalArgumentException(
+                    "CREATED 是订单初始审计事件，不触发状态转换");
             case SUBMITTED -> OrderStatus.SUBMITTED;
             case ACKNOWLEDGED -> OrderStatus.ACKNOWLEDGED;
             case PARTIALLY_FILLED -> OrderStatus.PARTIALLY_FILLED;

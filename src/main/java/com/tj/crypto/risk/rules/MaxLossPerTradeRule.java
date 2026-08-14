@@ -1,6 +1,6 @@
 package com.tj.crypto.risk.rules;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
@@ -18,10 +18,10 @@ import java.math.RoundingMode;
 @Component
 public class MaxLossPerTradeRule implements RiskRule {
 
-    private final BigDecimal maxLossPct;
+    private final RiskProperties riskProperties;
 
     public MaxLossPerTradeRule(RiskProperties riskProperties) {
-        this.maxLossPct = riskProperties.getMaxLossPerTradePct();
+        this.riskProperties = riskProperties;
     }
 
     @Override
@@ -30,7 +30,9 @@ public class MaxLossPerTradeRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
+    public RiskCheckResult check(Order order, TradingAccount account) {
+        if (order.reduceOnly()) return RiskCheckResult.passed();
+        BigDecimal maxLossPct = riskProperties.getMaxLossPerTradePct();
         BigDecimal orderValue = order.quantity().multiply(order.price() != null ? order.price() : BigDecimal.ZERO);
         BigDecimal maxValue = account.getBalance().multiply(maxLossPct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
 

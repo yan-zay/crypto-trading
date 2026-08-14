@@ -55,17 +55,14 @@ public class FactorAnalyzer {
             return Double.NaN;
         }
 
-        List<BigDecimal> factorValues = computeFactorValues(factorName, instrument, timeframe, bars);
-        List<BigDecimal> forwardReturns = computeForwardReturns(bars);
-
-        int n = Math.min(factorValues.size(), forwardReturns.size());
-        if (n < 2) {
+        List<FactorSample> samples = computeSamples(factorName, instrument, timeframe, bars, 0.0);
+        if (samples.size() < 2) {
             return Double.NaN;
         }
 
         return pearsonCorrelation(
-                factorValues.subList(0, n),
-                forwardReturns.subList(0, n)
+                samples.stream().map(FactorSample::factorValue).toList(),
+                samples.stream().map(FactorSample::forwardReturn).toList()
         );
     }
 
@@ -77,7 +74,7 @@ public class FactorAnalyzer {
      * @param instrument 交易工具
      * @param timeframe  时间周期
      * @param days       回溯天数
-     * @param threshold  阈值（未使用，预留用于绝对值过滤）
+     * @param threshold  因子绝对值阈值，小于阈值的样本不参与统计
      * @return 命中率（0 到 1），数据不足时返回 NaN
      */
     public double calculateHitRate(String factorName, Instrument instrument, Timeframe timeframe,
@@ -90,24 +87,22 @@ public class FactorAnalyzer {
             return Double.NaN;
         }
 
-        List<BigDecimal> factorValues = computeFactorValues(factorName, instrument, timeframe, bars);
-        List<BigDecimal> forwardReturns = computeForwardReturns(bars);
-
-        int n = Math.min(factorValues.size(), forwardReturns.size());
-        if (n == 0) {
+        List<FactorSample> samples = computeSamples(
+                factorName, instrument, timeframe, bars, Math.max(0.0, threshold));
+        if (samples.isEmpty()) {
             return Double.NaN;
         }
 
         int hits = 0;
-        for (int i = 0; i < n; i++) {
-            boolean factorPositive = factorValues.get(i).compareTo(BigDecimal.ZERO) > 0;
-            boolean returnPositive = forwardReturns.get(i).compareTo(BigDecimal.ZERO) > 0;
+        for (FactorSample sample : samples) {
+            boolean factorPositive = sample.factorValue().compareTo(BigDecimal.ZERO) > 0;
+            boolean returnPositive = sample.forwardReturn().compareTo(BigDecimal.ZERO) > 0;
             if (factorPositive == returnPositive) {
                 hits++;
             }
         }
 
-        return (double) hits / n;
+        return (double) hits / samples.size();
     }
 
     /**
@@ -130,18 +125,15 @@ public class FactorAnalyzer {
                     BigDecimal.ZERO, BigDecimal.ZERO, 0.0, 1.0);
         }
 
-        List<BigDecimal> factorValues = computeFactorValues(factorName, instrument, timeframe, bars);
-        List<BigDecimal> forwardReturns = computeForwardReturns(bars);
-
-        int n = Math.min(factorValues.size(), forwardReturns.size());
+        List<FactorSample> samples = computeSamples(factorName, instrument, timeframe, bars, 0.0);
         List<BigDecimal> positiveReturns = new ArrayList<>();
         List<BigDecimal> negativeReturns = new ArrayList<>();
 
-        for (int i = 0; i < n; i++) {
-            if (factorValues.get(i).compareTo(BigDecimal.ZERO) > 0) {
-                positiveReturns.add(forwardReturns.get(i));
-            } else if (factorValues.get(i).compareTo(BigDecimal.ZERO) < 0) {
-                negativeReturns.add(forwardReturns.get(i));
+        for (FactorSample sample : samples) {
+            if (sample.factorValue().compareTo(BigDecimal.ZERO) > 0) {
+                positiveReturns.add(sample.forwardReturn());
+            } else if (sample.factorValue().compareTo(BigDecimal.ZERO) < 0) {
+                negativeReturns.add(sample.forwardReturn());
             }
         }
 
@@ -158,39 +150,32 @@ public class FactorAnalyzer {
      * 计算每根 bar 对应的因子值。
      * 从第 2 根 bar 开始计算（需要至少 1 根历史 bar 作为因子计算上下文）。
      */
-    private List<BigDecimal> computeFactorValues(String factorName, Instrument instrument,
-                                                  Timeframe timeframe, List<BarEvent> bars) {
-        List<BigDecimal> values = new ArrayList<>();
-        for (int i = 1; i < bars.size(); i++) {
-            Factor factor = factorRegistry.calculate(factorName, instrument, timeframe);
-            if (factor != null && factor.isUsable()) {
-                values.add(factor.value());
-            } else {
-                values.add(BigDecimal.ZERO);
-            }
-        }
-        return values;
-    }
-
-    /**
-     * 计算前向收益：close[i+1] / close[i] - 1。
-     * 返回 bars.size() - 1 个值。
-     */
-    private List<BigDecimal> computeForwardReturns(List<BarEvent> bars) {
-        List<BigDecimal> returns = new ArrayList<>();
+    private List<FactorSample> computeSamples(String factorName, Instrument instrument,
+                                              Timeframe timeframe, List<BarEvent> bars,
+                                              double threshold) {
+        List<FactorSample> samples = new ArrayList<>();
+        BigDecimal minAbsoluteValue = BigDecimal.valueOf(threshold);
         for (int i = 0; i < bars.size() - 1; i++) {
+            List<BarEvent> historyAsOfBar = List.copyOf(bars.subList(0, i + 1));
+            Factor factor = factorRegistry.calculate(
+                    factorName, instrument, timeframe, historyAsOfBar);
+            if (factor == null || !factor.isUsable()
+                    || factor.value().abs().compareTo(minAbsoluteValue) < 0) {
+                continue;
+            }
             BigDecimal currentClose = bars.get(i).close();
             BigDecimal nextClose = bars.get(i + 1).close();
             if (currentClose.compareTo(BigDecimal.ZERO) != 0) {
                 BigDecimal ret = nextClose.subtract(currentClose)
                         .divide(currentClose, HIGH_SCALE, RoundingMode.HALF_UP);
-                returns.add(ret);
-            } else {
-                returns.add(BigDecimal.ZERO);
+                samples.add(new FactorSample(
+                        bars.get(i).metadata().exchangeTimestamp(), factor.value(), ret));
             }
         }
-        return returns;
+        return samples;
     }
+
+    private record FactorSample(long timestamp, BigDecimal factorValue, BigDecimal forwardReturn) {}
 
     /**
      * Welch's t-test（不等方差 t 检验）。

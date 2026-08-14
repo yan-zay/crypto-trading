@@ -216,8 +216,8 @@ class PerformanceCalculatorEnhancedTest {
         Map<String, BigDecimal> monthly = report.monthlyReturns();
         assertThat(monthly).containsKey("2024-01");
         assertThat(monthly).containsKey("2024-02");
-        assertThat(monthly.get("2024-01")).isEqualByComparingTo(bd(10));
-        assertThat(monthly.get("2024-02")).isEqualByComparingTo(bd(-5));
+        assertThat(monthly.get("2024-01")).isEqualByComparingTo(new BigDecimal("0.1"));
+        assertThat(monthly.get("2024-02")).isEqualByComparingTo(new BigDecimal("-0.05"));
     }
 
     @Test

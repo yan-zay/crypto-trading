@@ -10,6 +10,8 @@ import com.tj.crypto.admin.mapper.ConfigVersionMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,18 +34,31 @@ public class ConfigVersionService {
     private final ConfigVersionMapper configVersionMapper;
     private final AuditLogMapper auditLogMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final ConfigPayloadValidator payloadValidator;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ConfigVersionService(ConfigVersionMapper configVersionMapper,
                                 AuditLogMapper auditLogMapper,
-                                ApplicationEventPublisher eventPublisher) {
+                                ApplicationEventPublisher eventPublisher,
+                                ConfigPayloadValidator payloadValidator) {
         this.configVersionMapper = configVersionMapper;
         this.auditLogMapper = auditLogMapper;
         this.eventPublisher = eventPublisher;
+        this.payloadValidator = payloadValidator;
+    }
+
+    /** Compatibility constructor for isolated unit tests. */
+    public ConfigVersionService(ConfigVersionMapper configVersionMapper,
+                                AuditLogMapper auditLogMapper,
+                                ApplicationEventPublisher eventPublisher) {
+        this(configVersionMapper, auditLogMapper, eventPublisher,
+                new ConfigPayloadValidator(new ObjectMapper()));
     }
 
     /**
      * 创建草稿版本。
      */
+    @Transactional
     public ConfigVersion createDraft(ConfigType type, String configKey, String contentJson, String remark) {
         Instant now = Instant.now();
         String versionId = generateVersionId();
@@ -70,9 +85,11 @@ public class ConfigVersionService {
     /**
      * 验证配置版本。状态从 DRAFT 变为 VALIDATED。
      */
+    @Transactional
     public ConfigVersion validate(String versionId) {
         ConfigVersionDO current = getVersionOrThrow(versionId);
         assertStatus(current, ConfigStatus.DRAFT, "validate");
+        payloadValidator.validate(ConfigType.fromCode(current.getConfigType()), current.getContentJson());
 
         current.setStatus(ConfigStatus.VALIDATED.getCode());
         current.setUpdateTime(new Date());
@@ -91,6 +108,7 @@ public class ConfigVersionService {
      * 如果已有 ACTIVE 版本，旧版本自动变为 ARCHIVED。
      * 发布后触发 ConfigPublishedEvent 事件，同步运行态。
      */
+    @Transactional
     public ConfigVersion publish(String versionId, String publishedBy) {
         ConfigVersionDO current = getVersionOrThrow(versionId);
         assertStatus(current, ConfigStatus.VALIDATED, "publish");
@@ -131,6 +149,7 @@ public class ConfigVersionService {
     /**
      * 回滚到指定的目标版本。
      */
+    @Transactional
     public ConfigVersion rollback(String currentVersionId, String targetVersionId) {
         ConfigVersionDO current = getVersionOrThrow(currentVersionId);
         ConfigVersionDO target = getVersionOrThrow(targetVersionId);

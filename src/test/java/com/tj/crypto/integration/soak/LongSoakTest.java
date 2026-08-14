@@ -4,6 +4,7 @@ import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>无高错误率（错误率 < 1%）</li>
  * </ul>
  */
+@Tag("soak")
 @DisplayName("长时间稳定性测试 (24h/72h)")
 class LongSoakTest {
 

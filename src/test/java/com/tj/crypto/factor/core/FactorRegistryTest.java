@@ -36,21 +36,21 @@ class FactorRegistryTest {
     @Test
     @DisplayName("calculate() 应返回正确因子值")
     void shouldReturnCorrectFactorValue() {
-        Factor expected = Factor.of("SMA_20", BigDecimal.valueOf(42000), System.currentTimeMillis());
-        FactorCalculator smaCalc = mockCalculator("SMA_20", expected);
+        Factor expected = Factor.of("SMA", BigDecimal.valueOf(42000), System.currentTimeMillis());
+        FactorCalculator smaCalc = mockCalculator("SMA", expected);
         registry = new FactorRegistry(List.of(smaCalc));
 
-        Factor result = registry.calculate("SMA_20", btcUsdt, Timeframe.M1);
+        Factor result = registry.calculate("SMA", btcUsdt, Timeframe.M1);
 
         assertThat(result).isNotNull();
-        assertThat(result.name()).isEqualTo("SMA_20");
+        assertThat(result.name()).isEqualTo("SMA");
         assertThat(result.value()).isEqualByComparingTo(BigDecimal.valueOf(42000));
     }
 
     @Test
     @DisplayName("calculate() 未知因子应返回 null")
     void shouldReturnNullForUnknownFactor() {
-        FactorCalculator smaCalc = mockCalculator("SMA_20", Factor.of("SMA_20", BigDecimal.ONE, 0));
+        FactorCalculator smaCalc = mockCalculator("SMA", Factor.of("SMA", BigDecimal.ONE, 0));
         registry = new FactorRegistry(List.of(smaCalc));
 
         Factor result = registry.calculate("UNKNOWN_FACTOR", btcUsdt, Timeframe.M1);
@@ -61,41 +61,41 @@ class FactorRegistryTest {
     @Test
     @DisplayName("calculateAll() 应返回所有可用因子")
     void shouldReturnAllUsableFactors() {
-        Factor smaFactor = Factor.of("SMA_20", BigDecimal.valueOf(42000), System.currentTimeMillis());
-        Factor rsiFactor = Factor.of("RSI_14", BigDecimal.valueOf(65), System.currentTimeMillis());
-        FactorCalculator smaCalc = mockCalculator("SMA_20", smaFactor);
-        FactorCalculator rsiCalc = mockCalculator("RSI_14", rsiFactor);
+        Factor smaFactor = Factor.of("SMA", BigDecimal.valueOf(42000), System.currentTimeMillis());
+        Factor rsiFactor = Factor.of("RSI", BigDecimal.valueOf(65), System.currentTimeMillis());
+        FactorCalculator smaCalc = mockCalculator("SMA", smaFactor);
+        FactorCalculator rsiCalc = mockCalculator("RSI", rsiFactor);
         registry = new FactorRegistry(List.of(smaCalc, rsiCalc));
 
         List<Factor> results = registry.calculateAll(btcUsdt, Timeframe.M1);
 
         assertThat(results).hasSize(2);
-        assertThat(results).extracting(Factor::name).containsExactlyInAnyOrder("SMA_20", "RSI_14");
+        assertThat(results).extracting(Factor::name).containsExactlyInAnyOrder("SMA", "RSI");
     }
 
     @Test
     @DisplayName("calculateAll() 应过滤掉 WARMUP 因子")
     void shouldFilterOutWarmupFactors() {
-        Factor readyFactor = Factor.of("SMA_20", BigDecimal.valueOf(42000), System.currentTimeMillis());
-        Factor warmupFactor = Factor.warmup("RSI_14");
-        FactorCalculator smaCalc = mockCalculator("SMA_20", readyFactor);
-        FactorCalculator rsiCalc = mockCalculator("RSI_14", warmupFactor);
+        Factor readyFactor = Factor.of("SMA", BigDecimal.valueOf(42000), System.currentTimeMillis());
+        Factor warmupFactor = Factor.warmup("RSI");
+        FactorCalculator smaCalc = mockCalculator("SMA", readyFactor);
+        FactorCalculator rsiCalc = mockCalculator("RSI", warmupFactor);
         registry = new FactorRegistry(List.of(smaCalc, rsiCalc));
 
         List<Factor> results = registry.calculateAll(btcUsdt, Timeframe.M1);
 
         assertThat(results).hasSize(1);
-        assertThat(results.get(0).name()).isEqualTo("SMA_20");
+        assertThat(results.get(0).name()).isEqualTo("SMA");
     }
 
     @Test
     @DisplayName("单个因子计算失败不应影响其他因子")
     void shouldNotAffectOtherFactorsWhenOneCalculationFails() {
-        Factor goodFactor = Factor.of("SMA_20", BigDecimal.valueOf(42000), System.currentTimeMillis());
-        FactorCalculator goodCalc = mockCalculator("SMA_20", goodFactor);
+        Factor goodFactor = Factor.of("SMA", BigDecimal.valueOf(42000), System.currentTimeMillis());
+        FactorCalculator goodCalc = mockCalculator("SMA", goodFactor);
 
         FactorCalculator badCalc = mock(FactorCalculator.class);
-        when(badCalc.name()).thenReturn("RSI_14");
+        when(badCalc.name()).thenReturn("RSI");
         when(badCalc.calculate(any(), any())).thenThrow(new RuntimeException("calculation error"));
 
         registry = new FactorRegistry(List.of(goodCalc, badCalc));
@@ -103,20 +103,20 @@ class FactorRegistryTest {
         List<Factor> results = registry.calculateAll(btcUsdt, Timeframe.M1);
 
         assertThat(results).hasSize(1);
-        assertThat(results.get(0).name()).isEqualTo("SMA_20");
+        assertThat(results.get(0).name()).isEqualTo("SMA");
     }
 
     @Test
     @DisplayName("getRegisteredFactors() 应返回所有注册名称")
     void shouldReturnAllRegisteredFactorNames() {
-        FactorCalculator smaCalc = mockCalculator("SMA_20", Factor.of("SMA_20", BigDecimal.ONE, 0));
-        FactorCalculator rsiCalc = mockCalculator("RSI_14", Factor.of("RSI_14", BigDecimal.ONE, 0));
+        FactorCalculator smaCalc = mockCalculator("SMA", Factor.of("SMA", BigDecimal.ONE, 0));
+        FactorCalculator rsiCalc = mockCalculator("RSI", Factor.of("RSI", BigDecimal.ONE, 0));
         FactorCalculator macdCalc = mockCalculator("MACD_HIST", Factor.of("MACD_HIST", BigDecimal.ONE, 0));
         registry = new FactorRegistry(List.of(smaCalc, rsiCalc, macdCalc));
 
         List<String> names = registry.getRegisteredFactors();
 
         assertThat(names).hasSize(3);
-        assertThat(names).containsExactlyInAnyOrder("SMA_20", "RSI_14", "MACD_HIST");
+        assertThat(names).containsExactlyInAnyOrder("SMA", "RSI", "MACD_HIST");
     }
 }

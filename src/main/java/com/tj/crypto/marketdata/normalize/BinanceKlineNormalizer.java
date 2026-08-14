@@ -42,11 +42,20 @@ public class BinanceKlineNormalizer {
      * @return BarEvent，解析失败时返回 null
      */
     public BarEvent normalize(JsonNode klineNode, long eventTime) {
+        return normalize(klineNode, eventTime, MarketType.PERPETUAL);
+    }
+
+    /** Normalize a Binance candle while preserving the source market identity. */
+    public BarEvent normalize(JsonNode klineNode, long eventTime, MarketType marketType) {
         try {
+            if (marketType != MarketType.SPOT && marketType != MarketType.PERPETUAL) {
+                throw new IllegalArgumentException(
+                        "Binance K-line market must be SPOT or PERPETUAL");
+            }
             String symbol = klineNode.get("s").asText();
             String interval = klineNode.get("i").asText();
 
-            Instrument instrument = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, symbol);
+            Instrument instrument = Instrument.of(Exchange.BINANCE, marketType, symbol);
             Timeframe timeframe = Timeframe.fromCode(interval);
 
             BigDecimal open = new BigDecimal(klineNode.get("o").asText());

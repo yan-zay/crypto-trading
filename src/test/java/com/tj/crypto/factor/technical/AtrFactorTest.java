@@ -68,6 +68,6 @@ class AtrFactorTest {
     @Test
     @DisplayName("因子名称应为 ATR_14")
     void shouldReturnCorrectName() {
-        assertThat(atrFactor.name()).isEqualTo("ATR_14");
+        assertThat(atrFactor.name()).isEqualTo("ATR");
     }
 }

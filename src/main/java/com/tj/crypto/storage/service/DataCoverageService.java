@@ -1,5 +1,8 @@
 package com.tj.crypto.storage.service;
 
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.storage.entity.BarEventDO;
 import com.tj.crypto.storage.mapper.BarEventMapper;
@@ -39,12 +42,27 @@ public class DataCoverageService {
      * @return 覆盖率报告
      */
     public CoverageReport checkCoverage(String symbol, String timeframe, long from, long to) {
+        return calculateCoverage(Exchange.BINANCE, MarketType.PERPETUAL, symbol, timeframe,
+                from, to, barEventMapper.selectByTimeRange(symbol, timeframe, from, to));
+    }
+
+    /** 使用完整交易工具标识检查覆盖率。 */
+    public CoverageReport checkCoverage(Instrument instrument, String timeframe, long from, long to) {
+        List<BarEventDO> bars = barEventMapper.selectByTimeRange(
+                instrument.exchange().getCode(), instrument.marketType().getCode(),
+                instrument.symbol(), timeframe, from, to);
+        return calculateCoverage(instrument.exchange(), instrument.marketType(),
+                instrument.symbol(), timeframe, from, to, bars);
+    }
+
+    private CoverageReport calculateCoverage(Exchange exchange, MarketType marketType,
+                                               String symbol, String timeframe,
+                                               long from, long to, List<BarEventDO> bars) {
         Timeframe tf = Timeframe.fromCode(timeframe);
         long intervalMillis = tf.getMillis();
 
         long expectedBars = (to - from) / intervalMillis + 1;
 
-        List<BarEventDO> bars = barEventMapper.selectByTimeRange(symbol, timeframe, from, to);
         long actualBars = bars.size();
 
         List<CoverageReport.TimeGap> gaps = detectGaps(bars, from, to, intervalMillis);
@@ -56,7 +74,8 @@ public class DataCoverageService {
         log.info("Coverage check: {} {} [{} -> {}] expected={}, actual={}, gaps={}, coverage={}%",
                 symbol, timeframe, from, to, expectedBars, actualBars, gaps.size(), coveragePct);
 
-        return new CoverageReport(symbol, timeframe, expectedBars, actualBars, coveragePct, gaps);
+        return new CoverageReport(exchange, marketType, symbol, timeframe,
+                expectedBars, actualBars, coveragePct, gaps);
     }
 
     /**

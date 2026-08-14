@@ -3,8 +3,9 @@ package com.tj.crypto.strategy.core;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -16,19 +17,23 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class InMemorySignalCollector implements SignalCollector {
 
-    private final ConcurrentHashMap<String, List<SignalStore>> store = new ConcurrentHashMap<>();
+    private static final int MAX_SIGNALS_PER_STRATEGY = 10_000;
+    private final ConcurrentHashMap<String, Deque<SignalStore>> store = new ConcurrentHashMap<>();
 
     @Override
     public void collect(SignalEvent signal) {
-        // 使用 synchronizedList 确保并发安全
-        store.computeIfAbsent(signal.strategyName(), k -> Collections.synchronizedList(new ArrayList<>()))
-                .add(new SignalStore(signal));
+        Deque<SignalStore> signals = store.computeIfAbsent(
+                signal.strategyName(), ignored -> new ArrayDeque<>());
+        synchronized (signals) {
+            if (signals.size() >= MAX_SIGNALS_PER_STRATEGY) signals.removeFirst();
+            signals.addLast(new SignalStore(signal));
+        }
         log.debug("Signal collected: {} {} {}", signal.strategyName(), signal.type(), signal.reason());
     }
 
     @Override
     public List<SignalEvent> getSignals(String strategyName) {
-        List<SignalStore> list = store.get(strategyName);
+        Deque<SignalStore> list = store.get(strategyName);
         if (list == null) return List.of();
         synchronized (list) {
             return list.stream().map(SignalStore::signal).toList();
@@ -37,7 +42,7 @@ public class InMemorySignalCollector implements SignalCollector {
 
     @Override
     public List<SignalEvent> getSignals(String strategyName, long from, long to) {
-        List<SignalStore> list = store.get(strategyName);
+        Deque<SignalStore> list = store.get(strategyName);
         if (list == null) return List.of();
         synchronized (list) {
             return list.stream()
@@ -50,7 +55,7 @@ public class InMemorySignalCollector implements SignalCollector {
     @Override
     public List<SignalEvent> getAllSignals() {
         List<SignalEvent> all = new ArrayList<>();
-        for (List<SignalStore> list : store.values()) {
+        for (Deque<SignalStore> list : store.values()) {
             synchronized (list) {
                 list.stream().map(SignalStore::signal).forEach(all::add);
             }

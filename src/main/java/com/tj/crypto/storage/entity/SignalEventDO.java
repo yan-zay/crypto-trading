@@ -21,6 +21,7 @@ public class SignalEventDO extends PhysicsTimeBaseDO {
     private Long id;
     private String strategyName;
     private String exchange;
+    private String marketType;
     private String symbol;
     private String signalType;
     private BigDecimal confidence;

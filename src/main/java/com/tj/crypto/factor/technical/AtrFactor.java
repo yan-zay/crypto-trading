@@ -5,7 +5,8 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
@@ -26,26 +27,45 @@ import java.util.List;
  * 2. ATR = SMA(True Range, period)
  */
 @Component
-public class AtrFactor implements FactorCalculator {
+public class AtrFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
-    private final int period;
+    private final FactorProperties factorProperties;
 
     public AtrFactor(BarCache barCache, FactorProperties factorProperties) {
         this.barCache = barCache;
-        this.period = factorProperties.getAtrPeriod();
+        this.factorProperties = factorProperties;
     }
 
     @Override
     public String name() {
-        return "ATR_" + period;
+        return "ATR";
     }
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
-        // ATR 需要 period + 1 根 bar（因为需要前一根 bar 的收盘价计算 True Range）
+        int period = factorProperties.getAtrPeriod();
         int requiredBars = period + 10;
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, requiredBars);
+        return calculateFromBars(instrument, timeframe, bars, period);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        int period = factorProperties.getAtrPeriod();
+        return calculateFromBars(instrument, timeframe,
+                BarSlices.latestFinalized(bars, period + 10), period);
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        int period = factorProperties.getAtrPeriod();
+        return calculateFromBars(instrument, timeframe,
+                barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, period + 10), period);
+    }
+
+    private Factor calculateFromBars(Instrument instrument, Timeframe timeframe,
+                                     List<BarEvent> bars, int period) {
         if (bars.size() < period + 1) {
             return Factor.warmup(name());
         }

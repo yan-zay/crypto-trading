@@ -29,6 +29,7 @@ import com.tj.crypto.strategy.impl.BollingerBreakoutStrategy;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -46,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>注意：此测试需要网络连接访问 Binance API（通过 SOCKS 代理）。
  */
+@Tag("external")
 class BollingerBacktestTest {
 
     private static final String SYMBOL = "BTCUSDT";
@@ -102,7 +104,7 @@ class BollingerBacktestTest {
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
-                new PositionSizer(),
+                new PositionSizer(riskProperties),
                 new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
 
@@ -131,12 +133,16 @@ class BollingerBacktestTest {
     }
 
     @Test
-    @DisplayName("至少产生 1 个信号")
-    void shouldGenerateAtLeastOneSignal() {
+    @DisplayName("至少产生 5 个信号和 2 笔交易")
+    void shouldGenerateSufficientSignalsAndTrades() {
         assertThat(cachedResult.signals())
-                .as("Bollinger strategy should generate at least 1 signal from %d days of %s data",
+                .as("Bollinger strategy should generate at least 5 signals from %d days of %s data",
                         DAYS_BACK, SYMBOL)
-                .isNotEmpty();
+                .hasSizeGreaterThanOrEqualTo(5);
+        assertThat(cachedResult.trades())
+                .as("Bollinger strategy should generate at least 2 trades from %d days of %s data",
+                        DAYS_BACK, SYMBOL)
+                .hasSizeGreaterThanOrEqualTo(2);
     }
 
     @Test

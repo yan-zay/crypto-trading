@@ -1,11 +1,13 @@
 package com.tj.crypto.risk.rules;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
+import com.tj.crypto.backtest.portfolio.AccountRiskSnapshot;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskRule;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -24,6 +26,7 @@ public class PerSymbolExposureRule implements RiskRule {
 
     private final BigDecimal maxExposurePct;
 
+    @Autowired
     public PerSymbolExposureRule() {
         this(DEFAULT_MAX_EXPOSURE_PCT);
     }
@@ -38,19 +41,15 @@ public class PerSymbolExposureRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
+    public RiskCheckResult check(Order order, TradingAccount account) {
+        if (order.reduceOnly()) {
+            return RiskCheckResult.passed();
+        }
         BigDecimal orderValue = order.quantity().multiply(
                 order.price() != null ? order.price() : BigDecimal.ZERO);
-
-        // 当前该币种的持仓价值
-        String symbol = order.instrument().symbol();
-        BigDecimal existingValue = account.getPositions().entrySet().stream()
-                .filter(e -> e.getKey().equals(symbol))
-                .map(e -> e.getValue().quantity().multiply(e.getValue().entryPrice()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalValue = existingValue.add(orderValue);
-        BigDecimal accountEquity = account.getBalance().add(existingValue);
+        AccountRiskSnapshot snapshot = account.riskSnapshot(order.instrument(), order.price());
+        BigDecimal totalValue = snapshot.instrumentExposure().add(orderValue);
+        BigDecimal accountEquity = snapshot.equity();
 
         if (accountEquity.compareTo(BigDecimal.ZERO) <= 0) {
             return RiskCheckResult.passed();
@@ -64,7 +63,7 @@ public class PerSymbolExposureRule implements RiskRule {
             return RiskCheckResult.rejected(
                     OrderRejectReason.EXPOSURE_LIMIT,
                     String.format("%s 暴露 %.1f%% 超过限制 %.1f%%",
-                            symbol, exposurePct, maxExposurePct)
+                            order.instrument().symbol(), exposurePct, maxExposurePct)
             );
         }
 

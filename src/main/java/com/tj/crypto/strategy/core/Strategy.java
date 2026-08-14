@@ -3,6 +3,7 @@ package com.tj.crypto.strategy.core;
 import com.tj.crypto.marketdata.model.MarketEvent;
 
 import java.util.Set;
+import java.util.Map;
 
 /**
  * 策略接口。
@@ -47,4 +48,9 @@ public interface Strategy {
      * @param context   策略上下文
      */
     default void onTimer(long timestamp, StrategyContext context) {}
+
+    /** Serializable strategy configuration captured with every backtest run. */
+    default Object configuration() {
+        return Map.of();
+    }
 }

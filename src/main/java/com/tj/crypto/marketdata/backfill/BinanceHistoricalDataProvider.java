@@ -30,7 +30,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
-public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
+public class BinanceHistoricalDataProvider implements ExchangeHistoricalDataProvider {
 
     private static final int MAX_LIMIT = 1500;
     private static final int KLINE_ARRAY_SIZE = 12;
@@ -58,12 +58,18 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
     }
 
     @Override
+    public Exchange exchange() {
+        return Exchange.BINANCE;
+    }
+
+    @Override
     public List<BarEvent> loadBars(Instrument instrument, Timeframe timeframe, long from, long to) {
+        validateInstrument(instrument);
         List<BarEvent> allBars = new ArrayList<>();
         long currentStart = from;
 
-        while (currentStart < to) {
-            String url = buildUrl(instrument.symbol(), timeframe, currentStart, to);
+        while (currentStart <= to) {
+            String url = buildUrl(instrument, timeframe, currentStart, to);
             List<BarEvent> page = fetchPage(url, instrument, timeframe);
 
             if (page.isEmpty()) {
@@ -91,9 +97,21 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
     /**
      * 构建 Binance klines API URL。
      */
+    String buildUrl(Instrument instrument, Timeframe timeframe, long startTime, long endTime) {
+        validateInstrument(instrument);
+        String baseUrl = instrument.marketType() == MarketType.SPOT
+                ? properties.getSpotBaseUrl() : properties.getPerpetualBaseUrl();
+        String path = instrument.marketType() == MarketType.SPOT
+                ? "/api/v3/klines" : "/fapi/v1/klines";
+        return String.format("%s%s?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=%d",
+                baseUrl, path, instrument.symbol(), timeframe.getCode(),
+                startTime, endTime, MAX_LIMIT);
+    }
+
+    /** Backward-compatible helper for tests and callers that assumed USD-M futures. */
     String buildUrl(String symbol, Timeframe timeframe, long startTime, long endTime) {
-        return String.format("%s/fapi/v1/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=%d",
-                properties.getBaseUrl(), symbol, timeframe.getCode(), startTime, endTime, MAX_LIMIT);
+        return buildUrl(Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, symbol),
+                timeframe, startTime, endTime);
     }
 
     /**
@@ -104,20 +122,20 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                log.error("Binance API request failed: HTTP {} for URL {}", response.code(), url);
-                return List.of();
+                throw new HistoricalDataAccessException(
+                        "Binance historical data request failed with HTTP " + response.code());
             }
 
             ResponseBody body = response.body();
             if (body == null) {
-                log.warn("Binance API returned empty body for URL {}", url);
-                return List.of();
+                throw new HistoricalDataAccessException(
+                        "Binance historical data response body is empty");
             }
 
             return parseResponse(body.string(), instrument, timeframe);
         } catch (IOException e) {
-            log.error("Failed to fetch klines from {}: {}", url, e.getMessage(), e);
-            return List.of();
+            throw new HistoricalDataAccessException(
+                    "Binance historical data request failed", e);
         }
     }
 
@@ -133,8 +151,8 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
         try {
             JsonNode root = objectMapper.readTree(json);
             if (!root.isArray()) {
-                log.error("Unexpected Binance API response format: not an array");
-                return List.of();
+                throw new HistoricalDataAccessException(
+                        "Unexpected Binance historical data response format");
             }
 
             List<BarEvent> bars = new ArrayList<>(root.size());
@@ -144,10 +162,14 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
                     bars.add(bar);
                 }
             }
+            if (!root.isEmpty() && bars.isEmpty()) {
+                throw new HistoricalDataAccessException(
+                        "Binance historical data page contained no valid candles");
+            }
             return bars;
         } catch (IOException e) {
-            log.error("Failed to parse Binance klines response: {}", e.getMessage(), e);
-            return List.of();
+            throw new HistoricalDataAccessException(
+                    "Cannot parse Binance historical data response", e);
         }
     }
 
@@ -182,6 +204,17 @@ public class BinanceHistoricalDataProvider implements HistoricalDataProvider {
         } catch (Exception e) {
             log.error("Failed to parse kline array: {}", e.getMessage(), e);
             return null;
+        }
+    }
+
+    private void validateInstrument(Instrument instrument) {
+        if (instrument.exchange() != Exchange.BINANCE) {
+            throw new IllegalArgumentException("Binance provider requires a Binance instrument");
+        }
+        if (instrument.marketType() != MarketType.SPOT
+                && instrument.marketType() != MarketType.PERPETUAL) {
+            throw new IllegalArgumentException(
+                    "Binance candle provider supports SPOT and PERPETUAL only");
         }
     }
 }

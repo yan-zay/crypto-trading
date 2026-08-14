@@ -82,8 +82,9 @@ public final class BacktestRunner {
         long now = System.currentTimeMillis();
         long warmupMillis = MACD_WARMUP_BARS * timeframe.getMillis();
         long backtestMillis = (long) daysBack * MILLIS_PER_DAY;
-        long startTime = now - backtestMillis - warmupMillis;
-        long endTime = now - MILLIS_PER_DAY; // 避免最后一根未完成的 bar
+        long endTime = (now / timeframe.getMillis()) * timeframe.getMillis() - timeframe.getMillis();
+        long tradeStartTime = endTime - backtestMillis;
+        long dataStartTime = tradeStartTime - warmupMillis;
 
         // 3. 组装依赖
         OkHttpClient httpClient = createHttpClient();
@@ -106,7 +107,7 @@ public final class BacktestRunner {
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
-                new PositionSizer(),
+                new PositionSizer(riskProperties),
                 new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
 
@@ -118,7 +119,8 @@ public final class BacktestRunner {
 
         // 9. 构建回测配置
         BigDecimal balance = BigDecimal.valueOf(initialBalance);
-        BacktestConfig config = new BacktestConfig(instrument, timeframe, startTime, endTime, balance);
+        BacktestConfig config = new BacktestConfig(
+                instrument, timeframe, dataStartTime, tradeStartTime, endTime, balance);
 
         log.info("Running backtest: {} {} for {} days (warmup {} bars), initial balance=${}",
                 symbol, timeframeCode, daysBack, MACD_WARMUP_BARS, initialBalance);
@@ -148,6 +150,19 @@ public final class BacktestRunner {
                                                   double initialBalance,
                                                   FactorProperties factorProperties,
                                                   HistoricalDataProvider dataProvider) {
+        return runWithProvider(instrument, timeframe, startTime, startTime, endTime,
+                initialBalance, factorProperties, dataProvider);
+    }
+
+    /**
+     * 使用独立的数据预热窗口和交易窗口运行回测。
+     * dataStartTime 到 startTime 的数据只用于因子预热，不允许产生订单。
+     */
+    public static BacktestResult runWithProvider(Instrument instrument, Timeframe timeframe,
+                                                  long dataStartTime, long startTime, long endTime,
+                                                  double initialBalance,
+                                                  FactorProperties factorProperties,
+                                                  HistoricalDataProvider dataProvider) {
         // 1. 创建共享 BarCache（因子计算器和回测引擎共用）
         InMemoryEventBus sharedEventBus = new InMemoryEventBus();
         InMemoryBarCache sharedBarCache = new InMemoryBarCache(sharedEventBus);
@@ -161,7 +176,7 @@ public final class BacktestRunner {
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
-                new PositionSizer(),
+                new PositionSizer(riskProperties),
                 new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
 
@@ -173,7 +188,8 @@ public final class BacktestRunner {
 
         // 6. 构建回测配置
         BigDecimal balance = BigDecimal.valueOf(initialBalance);
-        BacktestConfig config = new BacktestConfig(instrument, timeframe, startTime, endTime, balance);
+        BacktestConfig config = new BacktestConfig(
+                instrument, timeframe, dataStartTime, startTime, endTime, balance);
 
         // 7. 运行回测（使用共享 BarCache）
         return engine.run(config, strategy, dataProvider, sharedBarCache);
@@ -197,35 +213,35 @@ public final class BacktestRunner {
      *
      * @param timeframeCode 时间周期代码
      * @param daysBack      回测天数
-     * @return long[]{startTime, endTime}
+     * @return long[]{dataStartTime, tradeStartTime, endTime}
      */
     public static long[] calculateTimeRange(String timeframeCode, int daysBack) {
         Timeframe timeframe = Timeframe.fromCode(timeframeCode);
         long now = System.currentTimeMillis();
         long warmupMillis = MACD_WARMUP_BARS * timeframe.getMillis();
         long backtestMillis = (long) daysBack * MILLIS_PER_DAY;
-        long startTime = now - backtestMillis - warmupMillis;
-        long endTime = now - MILLIS_PER_DAY;
-        return new long[]{startTime, endTime};
+        long endTime = (now / timeframe.getMillis()) * timeframe.getMillis() - timeframe.getMillis();
+        long tradeStartTime = endTime - backtestMillis;
+        long dataStartTime = tradeStartTime - warmupMillis;
+        return new long[]{dataStartTime, tradeStartTime, endTime};
     }
 
     /**
-     * 创建带 SOCKS 代理的 OkHttpClient。
-     * 代理地址从环境变量 PROXY_HOST / PROXY_PORT 读取，默认 127.0.0.1:10808。
+     * 创建 OkHttpClient。只有 PROXY_ENABLED=true 时才启用 SOCKS 代理，
+     * 避免没有本地代理的环境无法访问交易所。
      */
     static OkHttpClient createHttpClient() {
-        String proxyHost = System.getenv().getOrDefault("PROXY_HOST", "127.0.0.1");
-        int proxyPort = Integer.parseInt(System.getenv().getOrDefault("PROXY_PORT", "10808"));
-
-        Proxy proxy = new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(proxyHost, proxyPort));
-
-        return new OkHttpClient.Builder()
-                .proxy(proxy)
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .callTimeout(300, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build();
+                .retryOnConnectionFailure(true);
+        if (Boolean.parseBoolean(System.getenv().getOrDefault("PROXY_ENABLED", "false"))) {
+            String proxyHost = System.getenv().getOrDefault("PROXY_HOST", "127.0.0.1");
+            int proxyPort = Integer.parseInt(System.getenv().getOrDefault("PROXY_PORT", "10808"));
+            builder.proxy(new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(proxyHost, proxyPort)));
+        }
+        return builder.build();
     }
 }

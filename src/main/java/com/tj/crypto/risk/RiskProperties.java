@@ -31,8 +31,23 @@ public class RiskProperties {
     /** 每日最大亏损占比（%），默认 5% */
     private BigDecimal maxDailyLossPct = BigDecimal.valueOf(5.0);
 
-    /** 最大持仓占比（%），默认 30% */
+    /** 实盘单笔订单最大名义金额占权益（%），默认 30% */
     private BigDecimal maxSizePct = BigDecimal.valueOf(30.0);
+
+    /** 全组合最大名义敞口占权益（%） */
+    private BigDecimal maxTotalExposurePct = BigDecimal.valueOf(80.0);
+
+    /** 单品种最大名义敞口占权益（%） */
+    private BigDecimal maxSymbolExposurePct = BigDecimal.valueOf(40.0);
+
+    /** 单策略最大名义敞口占初始资金（%） */
+    private BigDecimal maxStrategyBudgetPct = BigDecimal.valueOf(50.0);
+
+    /** 实盘签名账户快照允许的最大年龄（毫秒） */
+    private long accountSnapshotMaxAgeMs = 5_000;
+
+    /** 实盘签名账户快照允许的最大未来时钟偏差（毫秒） */
+    private long accountSnapshotMaxFutureSkewMs = 1_000;
 
     /** 滑点基点（1 bp = 0.01%），默认 5 bps */
     private int slippageBps = 5;

@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS admin_user (
 
 -- 插入默认管理员账户（密码: admin123，BCrypt 哈希）
 INSERT IGNORE INTO admin_user (username, password_hash, role, enabled) VALUES
-('admin', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EH', 'ADMIN', 1);
+('admin', '$2a$10$G6TEcRNH0v7CUBBVehWvReTLMwx/9PhpNYS6/B3cP4Ffo.Dx5bFEK', 'ADMIN', 1);
 
 -- 插入默认只读用户（密码: viewer123）
 INSERT IGNORE INTO admin_user (username, password_hash, role, enabled) VALUES
-('viewer', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iAt6Z5EH', 'VIEWER', 1);
+('viewer', '$2a$10$mfVXe5wdfp9bnpMy7nN8uudRir27.YlHPQAmNybfmyfCDwn0JElkC', 'VIEWER', 1);

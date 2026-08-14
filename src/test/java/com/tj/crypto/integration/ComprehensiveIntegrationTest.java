@@ -112,7 +112,7 @@ class ComprehensiveIntegrationTest {
             KillSwitch killSwitch = new KillSwitch();
             executionEngine = new ExecutionEngine(
                     new RiskEngine(List.of()),
-                    new PositionSizer(),
+                    new PositionSizer(riskProperties),
                     new FixedSlippageModel(riskProperties),
                     killSwitch);
 
@@ -225,7 +225,7 @@ class ComprehensiveIntegrationTest {
             RiskProperties riskProperties = new RiskProperties();
             ExecutionEngine executionEngine = new ExecutionEngine(
                     new RiskEngine(List.of()),
-                    new PositionSizer(),
+                    new PositionSizer(riskProperties),
                     new FixedSlippageModel(riskProperties),
                     new KillSwitch());
             engine = new BacktestEngine(performanceCalculator, List.of(), executionEngine);
@@ -645,7 +645,7 @@ class ComprehensiveIntegrationTest {
             RiskProperties riskProperties = new RiskProperties();
             executionEngine = new ExecutionEngine(
                     new RiskEngine(List.of()),
-                    new PositionSizer(),
+                    new PositionSizer(riskProperties),
                     new FixedSlippageModel(riskProperties),
                     killSwitch);
             account = new VirtualAccount(BigDecimal.valueOf(100_000));
@@ -691,30 +691,42 @@ class ComprehensiveIntegrationTest {
         }
 
         @Test
-        @DisplayName("CLOSE_ONLY 模式下 BUY 应被拒绝，SELL 应通过")
-        void shouldRejectBuyButAllowSellInCloseOnlyMode() {
-            // Arrange: 先开一个多仓
+        @DisplayName("CLOSE_ONLY 模式下开仓应被拒绝，平仓应通过")
+        void shouldRejectOpeningButAllowClosingInCloseOnlyMode() {
+            // Arrange: 切换到 CLOSE_ONLY（无持仓）
+            killSwitch.activate(KillSwitch.Mode.CLOSE_ONLY);
+
+            // Assert: BUY（开仓）应被拒绝（无持仓=开仓）
             SignalEvent buySignal = new SignalEvent(
                     "TestStrategy", BTC_USDT, SignalType.BUY,
                     BigDecimal.ONE, "Test", Map.of(), System.currentTimeMillis());
-            executionEngine.execute(buySignal, account,
-                    BigDecimal.valueOf(95000), System.currentTimeMillis());
-
-            // Act: 切换到 CLOSE_ONLY
-            killSwitch.activate(KillSwitch.Mode.CLOSE_ONLY);
-
-            // Assert: BUY 被拒绝
             Order buyOrder = executionEngine.execute(buySignal, account,
                     BigDecimal.valueOf(95000), System.currentTimeMillis());
             assertThat(buyOrder.rejectReason()).isEqualTo(OrderRejectReason.CLOSE_ONLY);
 
-            // Assert: SELL（平仓）应通过
+            // Assert: SELL（开空）也应被拒绝（无持仓=开仓）
             SignalEvent sellSignal = new SignalEvent(
                     "TestStrategy", BTC_USDT, SignalType.SELL,
-                    BigDecimal.ONE, "Close", Map.of(), System.currentTimeMillis());
+                    BigDecimal.ONE, "Open Short", Map.of(), System.currentTimeMillis());
             Order sellOrder = executionEngine.execute(sellSignal, account,
+                    BigDecimal.valueOf(95000), System.currentTimeMillis());
+            assertThat(sellOrder.rejectReason()).isEqualTo(OrderRejectReason.CLOSE_ONLY);
+
+            // 解除 CLOSE_ONLY，开一个多仓
+            killSwitch.deactivate();
+            executionEngine.execute(buySignal, account,
+                    BigDecimal.valueOf(95000), System.currentTimeMillis());
+
+            // 重新激活 CLOSE_ONLY
+            killSwitch.activate(KillSwitch.Mode.CLOSE_ONLY);
+
+            // Assert: SELL（平仓）应通过（有持仓=平仓）
+            SignalEvent closeSignal = new SignalEvent(
+                    "TestStrategy", BTC_USDT, SignalType.SELL,
+                    BigDecimal.ONE, "Close", Map.of(), System.currentTimeMillis());
+            Order closeOrder = executionEngine.execute(closeSignal, account,
                     BigDecimal.valueOf(96000), System.currentTimeMillis());
-            assertThat(sellOrder.status()).isEqualTo(OrderStatus.FILLED);
+            assertThat(closeOrder.status()).isEqualTo(OrderStatus.FILLED);
         }
 
         @Test

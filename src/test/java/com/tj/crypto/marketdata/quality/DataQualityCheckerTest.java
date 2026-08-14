@@ -27,6 +27,8 @@ class DataQualityCheckerTest {
 
     private static final Instrument BTC_USDT = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT");
     private static final Instrument ETH_USDT = Instrument.of(Exchange.BINANCE, MarketType.PERPETUAL, "ETHUSDT");
+    private static final Instrument BTC_USDT_SPOT = Instrument.of(Exchange.BINANCE, MarketType.SPOT, "BTCUSDT");
+    private static final Instrument OKX_BTC_USDT = Instrument.of(Exchange.OKX, MarketType.PERPETUAL, "BTCUSDT");
 
     @BeforeEach
     void setUp() {
@@ -94,6 +96,19 @@ class DataQualityCheckerTest {
 
             assertThat(report.gapCount()).isZero();
         }
+
+        @Test
+        @DisplayName("交错的不同完整序列身份不应造成伪间隙")
+        void shouldTrackGapsIndependentlyByCompleteSeriesIdentity() {
+            List<BarEvent> bars = List.of(
+                    createBar(BTC_USDT, Timeframe.M1, 1_000L, 100, 110, 90, 105, 50),
+                    createBar(BTC_USDT_SPOT, Timeframe.M1, 9_000_000L, 100, 110, 90, 105, 50),
+                    createBar(OKX_BTC_USDT, Timeframe.M1, 20_000_000L, 100, 110, 90, 105, 50),
+                    createBar(BTC_USDT, Timeframe.M1, 61_000L, 105, 115, 95, 110, 60)
+            );
+
+            assertThat(checker.checkGaps(bars).gapCount()).isZero();
+        }
     }
 
     @Nested
@@ -143,6 +158,18 @@ class DataQualityCheckerTest {
             DataQualityReport report = checker.checkDuplicates(bars);
 
             assertThat(report.duplicateCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("同 symbol/timeframe/timestamp 的不同交易所或市场类型不算重复")
+        void shouldUseCompleteSeriesIdentityForDuplicates() {
+            List<BarEvent> bars = List.of(
+                    createBar(BTC_USDT, Timeframe.M1, 1_000L, 100, 110, 90, 105, 50),
+                    createBar(BTC_USDT_SPOT, Timeframe.M1, 1_000L, 100, 110, 90, 105, 50),
+                    createBar(OKX_BTC_USDT, Timeframe.M1, 1_000L, 100, 110, 90, 105, 50)
+            );
+
+            assertThat(checker.checkDuplicates(bars).duplicateCount()).isZero();
         }
 
         @Test

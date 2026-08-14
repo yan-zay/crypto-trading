@@ -2,7 +2,14 @@ package com.tj.crypto.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.tj.crypto.common.domain.ChannelType;
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.Timeframe;
+import com.tj.crypto.config.properties.ConnectorProperties;
+import com.tj.crypto.config.properties.MarketUniverseProperties;
 import com.tj.crypto.event.MarketEventBus;
 import com.tj.crypto.marketdata.connector.ConnectorHealth;
 import com.tj.crypto.marketdata.connector.MarketDataConnector;
@@ -12,321 +19,234 @@ import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.normalize.BinanceKlineNormalizer;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.WebSocket;
-import okhttp3.WebSocketListener;
-import okio.ByteString;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-/**
- * Binance WebSocket 客户端（OkHttp 实现）。
- * 连接 Binance 期货 WebSocket，接收 kline 数据并标准化为 BarEvent。
- *
- * <p>通过 {@code crypto.websocket.client-type=okhttp} 启用。</p>
- *
- * @Author zay
- */
+/** Binance spot and USD-M perpetual public K-line connector. */
 @Slf4j
 @Component
-@ConditionalOnProperty(name = "crypto.websocket.client-type", havingValue = "okhttp")
+@ConditionalOnProperty(name = "crypto.connector.binance-enabled",
+        havingValue = "true", matchIfMissing = true)
 public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
 
-    private static final String WS_URL_TEMPLATE = "wss://fstream.binance.com/ws/%s";
-    private static final long INITIAL_RECONNECT_DELAY_MS = 1_000;
-    private static final long MAX_RECONNECT_DELAY_MS = 60_000;
-    private static final double RECONNECT_BACKOFF_MULTIPLIER = 2.0;
-    private static final long PING_INTERVAL_MS = 3 * 60 * 1000; // 3 分钟
-
-    private final OkHttpClient okHttpClient;
-    private final BinanceKlineNormalizer klineNormalizer;
+    private final BinanceKlineNormalizer normalizer;
     private final MarketEventBus eventBus;
-    private final List<String> symbols;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConnectorProperties properties;
+    private final MarketUniverseProperties marketUniverse;
+    private final ObjectMapper objectMapper;
+    private final Map<MarketType, Set<SubscriptionRequest>> subscriptions =
+            new EnumMap<>(MarketType.class);
+    private final Map<MarketType, BinanceMarketWebSocketSession> sessions =
+            new EnumMap<>(MarketType.class);
+    private final List<Consumer<MarketEvent>> handlers = new CopyOnWriteArrayList<>();
+    private final AtomicLong requestId = new AtomicLong(1);
+    private final AtomicLong parsedMessages = new AtomicLong();
+    private final AtomicLong lastParsedTimestamp = new AtomicLong();
+    private volatile String parseError;
 
-    private final AtomicBoolean connected = new AtomicBoolean(false);
-    private final AtomicLong messagesReceived = new AtomicLong(0);
-    private final AtomicLong reconnectCount = new AtomicLong(0);
-    private final AtomicReference<String> lastError = new AtomicReference<>();
-    private final AtomicLong lastMessageTimestamp = new AtomicLong(0);
-    private final List<Consumer<MarketEvent>> eventHandlers = new CopyOnWriteArrayList<>();
-
-    private volatile WebSocket webSocket;
-    private volatile boolean manualDisconnect = false;
-    private volatile Thread reconnectThread;
-    private volatile Thread pingThread;
-
-    public OkHttpBinanceWebSocketClient(OkHttpClient okHttpClient,
-                                         BinanceKlineNormalizer klineNormalizer,
+    public OkHttpBinanceWebSocketClient(OkHttpClient httpClient,
+                                         BinanceKlineNormalizer normalizer,
                                          MarketEventBus eventBus,
-                                         @Value("${crypto.binance.symbols:BTCUSDT,ETHUSDT}") List<String> symbols) {
-        this.okHttpClient = okHttpClient;
-        this.klineNormalizer = klineNormalizer;
+                                         ConnectorProperties properties,
+                                         MarketUniverseProperties marketUniverse,
+                                         ObjectMapper objectMapper) {
+        this.normalizer = normalizer;
         this.eventBus = eventBus;
-        this.symbols = symbols;
+        this.properties = properties;
+        this.marketUniverse = marketUniverse;
+        this.objectMapper = objectMapper;
+        subscriptions.put(MarketType.SPOT, new CopyOnWriteArraySet<>());
+        subscriptions.put(MarketType.PERPETUAL, new CopyOnWriteArraySet<>());
+        registerConfiguredSubscriptions();
+        sessions.put(MarketType.SPOT, createSession(
+                httpClient, MarketType.SPOT, properties.getBinanceSpotWsUrl()));
+        sessions.put(MarketType.PERPETUAL, createSession(
+                httpClient, MarketType.PERPETUAL, properties.getBinancePerpetualWsUrl()));
+    }
+
+    /** Test-friendly constructor. */
+    OkHttpBinanceWebSocketClient(OkHttpClient httpClient,
+                                 BinanceKlineNormalizer normalizer,
+                                 MarketEventBus eventBus,
+                                 List<String> symbols) {
+        this(httpClient, normalizer, eventBus, testProperties(symbols),
+                new MarketUniverseProperties(), new ObjectMapper());
     }
 
     @Override
     public void connect() {
-        if (connected.get()) {
-            log.warn("Binance WebSocket already connected, skipping");
-            return;
-        }
-        manualDisconnect = false;
-
-        String streams = symbols.stream()
-                .map(s -> s.toLowerCase() + "@kline_1m")
-                .collect(Collectors.joining("/"));
-        String url = String.format(WS_URL_TEMPLATE, streams);
-
-        log.info("Connecting to Binance WebSocket: {}", url);
-        Request request = new Request.Builder().url(url).build();
-
-        okHttpClient.newWebSocket(request, new BinanceWebSocketListener());
+        if (!properties.isBinanceEnabled()) return;
+        sessions.values().forEach(BinanceMarketWebSocketSession::connect);
     }
 
     @Override
     public void disconnect() {
-        manualDisconnect = true;
-        stopPingThread();
-        if (webSocket != null) {
-            webSocket.close(1000, "Client disconnect");
-            webSocket = null;
-        }
-        connected.set(false);
-        log.info("Binance WebSocket disconnected");
+        sessions.values().forEach(BinanceMarketWebSocketSession::disconnect);
     }
 
     @Override
     public boolean isConnected() {
-        return connected.get();
+        return !sessions.isEmpty()
+                && sessions.values().stream().allMatch(BinanceMarketWebSocketSession::isConnected);
     }
 
     @Override
     public void subscribe(SubscriptionRequest request) {
-        if (!isConnected() || webSocket == null) {
-            log.warn("Cannot subscribe, not connected");
-            return;
-        }
-        String stream = request.symbol().toLowerCase() + "@kline_" + request.timeframe().getCode();
-        String message = """
-                {"method":"SUBSCRIBE","params":["%s"],"id":1}
-                """.formatted(stream);
-        webSocket.send(message);
-        log.info("Subscribed to stream: {}", stream);
+        validate(request);
+        subscriptions.get(request.marketType()).add(request);
+        sessions.get(request.marketType()).subscribe(request);
     }
 
     @Override
     public void unsubscribe(SubscriptionRequest request) {
-        if (!isConnected() || webSocket == null) {
-            return;
-        }
-        String stream = request.symbol().toLowerCase() + "@kline_" + request.timeframe().getCode();
-        String message = """
-                {"method":"UNSUBSCRIBE","params":["%s"],"id":2}
-                """.formatted(stream);
-        webSocket.send(message);
-        log.info("Unsubscribed from stream: {}", stream);
+        validate(request);
+        subscriptions.get(request.marketType()).remove(request);
+        sessions.get(request.marketType()).unsubscribe(request);
     }
 
     @Override
     public ConnectorHealth health() {
-        return new ConnectorHealth(
-                connected.get(),
-                lastMessageTimestamp.get(),
-                messagesReceived.get(),
-                reconnectCount.get(),
-                lastError.get()
-        );
+        List<ConnectorHealth> health = sessions.values().stream()
+                .map(BinanceMarketWebSocketSession::health)
+                .toList();
+        long lastMessage = Math.max(lastParsedTimestamp.get(), health.stream()
+                .mapToLong(ConnectorHealth::lastMessageTimestamp).max().orElse(0));
+        long messages = Math.max(parsedMessages.get(), health.stream()
+                .mapToLong(ConnectorHealth::messagesReceived).sum());
+        long reconnects = health.stream().mapToLong(ConnectorHealth::reconnectCount).sum();
+        String errors = health.stream().map(ConnectorHealth::lastError)
+                .filter(error -> error != null && !error.isBlank())
+                .collect(Collectors.joining("; "));
+        if (parseError != null && !parseError.isBlank()) {
+            errors = errors.isBlank() ? parseError : errors + "; " + parseError;
+        }
+        return new ConnectorHealth(isConnected(), lastMessage, messages, reconnects,
+                errors.isBlank() ? null : errors);
     }
 
     @Override
     public void onEvent(Consumer<MarketEvent> handler) {
-        eventHandlers.add(handler);
+        handlers.add(handler);
     }
 
-    /**
-     * 发送订阅消息（供 Service 层调用）。
-     */
-    public void sendSubscribeMessage(String message) {
-        if (isConnected() && webSocket != null) {
-            webSocket.send(message);
-            log.debug("Sent subscribe message: {}", message);
-        } else {
-            log.warn("Cannot send message, not connected");
-        }
+    String buildConnectionUrl() {
+        return buildConnectionUrl(MarketType.PERPETUAL);
     }
 
-    /**
-     * 处理接收到的 WebSocket 消息。
-     * 包级访问，便于单元测试。
-     */
+    String buildConnectionUrl(MarketType marketType) {
+        return marketType == MarketType.SPOT
+                ? properties.getBinanceSpotWsUrl() : properties.getBinancePerpetualWsUrl();
+    }
+
+    String buildConfiguredKlineSubscribeMessage() {
+        return buildConfiguredKlineSubscribeMessage(MarketType.PERPETUAL);
+    }
+
+    String buildConfiguredKlineSubscribeMessage(MarketType marketType) {
+        return buildSubscriptionMessage("SUBSCRIBE", subscriptions.get(marketType));
+    }
+
+    String buildSubscriptionMessage(String operation,
+                                    Collection<SubscriptionRequest> requests) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("method", operation);
+        ArrayNode params = root.putArray("params");
+        requests.forEach(request -> params.add(streamName(request)));
+        root.put("id", requestId.getAndIncrement());
+        return root.toString();
+    }
+
     void handleMessage(String text) {
+        handleMessage(MarketType.PERPETUAL, text);
+    }
+
+    void handleMessage(MarketType marketType, String text) {
+        parsedMessages.incrementAndGet();
+        lastParsedTimestamp.set(System.currentTimeMillis());
         try {
-            messagesReceived.incrementAndGet();
-            lastMessageTimestamp.set(System.currentTimeMillis());
-
-            JsonNode jsonNode = objectMapper.readTree(text);
-
-            // Binance kline stream
-            if (jsonNode.has("e") && "kline".equals(jsonNode.get("e").asText())) {
-                handleKlineData(jsonNode);
-            }
-        } catch (Exception e) {
-            log.error("Error processing Binance message: {}", e.getMessage(), e);
-            lastError.set(e.getMessage());
-        }
-    }
-
-    private void handleKlineData(JsonNode jsonNode) {
-        try {
-            JsonNode kline = jsonNode.get("k");
-            long eventTime = jsonNode.has("E") ? jsonNode.get("E").asLong() : System.currentTimeMillis();
-
-            BarEvent barEvent = klineNormalizer.normalize(kline, eventTime);
-            if (barEvent != null) {
-                eventBus.publish(barEvent);
-                for (Consumer<MarketEvent> handler : eventHandlers) {
-                    try {
-                        handler.accept(barEvent);
-                    } catch (Exception e) {
-                        log.error("Event handler error: {}", e.getMessage(), e);
-                    }
-                }
-
-                log.debug("BarEvent published: {} {} O={} H={} L={} C={} V={} closed={}",
-                        barEvent.instrument().symbol(),
-                        barEvent.timeframe().getCode(),
-                        barEvent.open(), barEvent.high(), barEvent.low(), barEvent.close(),
-                        barEvent.volume(), barEvent.closed());
-            }
-        } catch (Exception e) {
-            log.error("Error parsing kline data: {}", e.getMessage(), e);
-            lastError.set(e.getMessage());
-        }
-    }
-
-    private void scheduleReconnect() {
-        if (manualDisconnect) {
-            return;
-        }
-        connected.set(false);
-        stopPingThread();
-
-        // 避免重复调度
-        Thread existing = reconnectThread;
-        if (existing != null && existing.isAlive()) {
-            return;
-        }
-
-        reconnectThread = new Thread(() -> {
-            long delay = INITIAL_RECONNECT_DELAY_MS;
-            while (!manualDisconnect && !connected.get()) {
+            JsonNode root = objectMapper.readTree(text);
+            JsonNode payload = root.has("data") && root.path("data").isObject()
+                    ? root.path("data") : root;
+            if (!"kline".equals(payload.path("e").asText())) return;
+            long eventTime = payload.path("E").asLong(System.currentTimeMillis());
+            BarEvent bar = normalizer.normalize(payload.path("k"), eventTime, marketType);
+            if (bar == null) return;
+            eventBus.publish(bar);
+            for (Consumer<MarketEvent> handler : handlers) {
                 try {
-                    log.info("Reconnecting to Binance in {} ms...", delay);
-                    Thread.sleep(delay);
-                    reconnectCount.incrementAndGet();
-                    connect();
-                    // 等待连接结果
-                    Thread.sleep(3000);
-                    if (connected.get()) {
-                        break;
-                    }
-                    delay = Math.min((long) (delay * RECONNECT_BACKOFF_MULTIPLIER), MAX_RECONNECT_DELAY_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("Reconnect thread interrupted");
-                    break;
+                    handler.accept(bar);
+                } catch (RuntimeException e) {
+                    log.warn("Binance event handler failed: {}", e.getMessage());
                 }
             }
-        }, "binance-reconnect");
-        reconnectThread.setDaemon(true);
-        reconnectThread.start();
+            parseError = null;
+        } catch (Exception e) {
+            parseError = e.getMessage();
+            log.warn("Cannot process Binance {} message: {}", marketType, e.getMessage());
+        }
     }
 
-    private void startPingThread() {
-        stopPingThread();
-        pingThread = new Thread(() -> {
-            while (connected.get() && !manualDisconnect) {
-                try {
-                    Thread.sleep(PING_INTERVAL_MS);
-                    if (webSocket != null && connected.get()) {
-                        webSocket.send("ping");
-                        log.debug("Sent ping to Binance");
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
+    private BinanceMarketWebSocketSession createSession(OkHttpClient httpClient,
+                                                          MarketType marketType,
+                                                          String websocketUrl) {
+        return new BinanceMarketWebSocketSession(
+                httpClient,
+                marketType,
+                websocketUrl,
+                () -> List.copyOf(subscriptions.get(marketType)),
+                this::buildSubscriptionMessage,
+                text -> handleMessage(marketType, text),
+                properties.getMaxReconnectAttempts());
+    }
+
+    private void registerConfiguredSubscriptions() {
+        for (String symbol : properties.getSymbols()) {
+            for (String timeframe : properties.getBinanceTimeframes()) {
+                addConfigured(MarketType.SPOT, symbol, timeframe);
+                addConfigured(MarketType.PERPETUAL, symbol, timeframe);
             }
-        }, "binance-ping");
-        pingThread.setDaemon(true);
-        pingThread.start();
-    }
-
-    private void stopPingThread() {
-        Thread t = pingThread;
-        if (t != null) {
-            t.interrupt();
-            pingThread = null;
         }
     }
 
-    /**
-     * OkHttp WebSocket 监听器。
-     */
-    private class BinanceWebSocketListener extends WebSocketListener {
+    private void addConfigured(MarketType marketType, String symbol, String timeframe) {
+        marketUniverse.validate(Exchange.BINANCE, marketType, symbol);
+        subscriptions.get(marketType).add(new SubscriptionRequest(
+                Exchange.BINANCE, marketType, ChannelType.KLINE,
+                MarketUniverseProperties.normalizeSymbol(symbol), Timeframe.fromCode(timeframe)));
+    }
 
-        @Override
-        public void onOpen(@NotNull WebSocket ws, @NotNull Response response) {
-            webSocket = ws;
-            connected.set(true);
-            lastError.set(null);
-            log.info("Binance WebSocket connected");
-            startPingThread();
+    private void validate(SubscriptionRequest request) {
+        if (request.exchange() != Exchange.BINANCE
+                || request.channelType() != ChannelType.KLINE
+                || !sessions.containsKey(request.marketType())
+                || request.timeframe() == null) {
+            throw new IllegalArgumentException(
+                    "Binance connector supports SPOT/PERPETUAL KLINE subscriptions only");
         }
+        marketUniverse.validate(request.exchange(), request.marketType(), request.symbol());
+    }
 
-        @Override
-        public void onMessage(@NotNull WebSocket ws, @NotNull String text) {
-            if ("pong".equals(text)) {
-                log.debug("Received pong from Binance");
-                return;
-            }
-            handleMessage(text);
-        }
+    private String streamName(SubscriptionRequest request) {
+        return request.symbol().toLowerCase(java.util.Locale.ROOT)
+                + "@kline_" + request.timeframe().getCode();
+    }
 
-        @Override
-        public void onMessage(@NotNull WebSocket ws, @NotNull ByteString bytes) {
-            // Binance 文本协议，一般不走二进制
-            handleMessage(bytes.utf8());
-        }
-
-        @Override
-        public void onClosing(@NotNull WebSocket ws, int code, @NotNull String reason) {
-            log.info("Binance WebSocket closing: {} {}", code, reason);
-            ws.close(code, reason);
-            connected.set(false);
-            scheduleReconnect();
-        }
-
-        @Override
-        public void onFailure(@NotNull WebSocket ws, @NotNull Throwable t, Response response) {
-            log.error("Binance WebSocket failure: {}", t.getMessage(), t);
-            lastError.set(t.getMessage());
-            connected.set(false);
-            scheduleReconnect();
-        }
+    private static ConnectorProperties testProperties(List<String> symbols) {
+        ConnectorProperties properties = new ConnectorProperties();
+        properties.setSymbols(new ArrayList<>(symbols));
+        properties.setBinanceTimeframes(List.of("1m"));
+        return properties;
     }
 }

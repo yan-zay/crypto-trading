@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -201,5 +202,42 @@ class StrategyManagerTest {
         assertThat(manager.getActiveStrategies()).isEmpty();
         assertThat(manager.enableStrategy("Unknown")).isFalse();
         assertThat(manager.disableStrategy("Unknown")).isFalse();
+    }
+
+    @Test
+    @DisplayName("配置启用但未注册的策略应让初始化失败")
+    void shouldFailFastWhenEnabledConfiguredStrategyIsMissing() {
+        StrategyProperties.StrategyConfig missingConfig = new StrategyProperties.StrategyConfig();
+        missingConfig.setEnabled(true);
+        strategyProperties.setConfigs(Map.of("MissingStrategy", missingConfig));
+
+        assertThatThrownBy(() -> new StrategyManager(List.of(macdStrategy), strategyProperties))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MissingStrategy")
+                .hasMessageContaining("no Strategy bean is registered");
+    }
+
+    @Test
+    @DisplayName("配置禁用且未注册的策略允许作为保留配置存在")
+    void shouldAllowDisabledConfiguredStrategyToBeMissing() {
+        StrategyProperties.StrategyConfig missingConfig = new StrategyProperties.StrategyConfig();
+        missingConfig.setEnabled(false);
+        strategyProperties.setConfigs(Map.of("MissingStrategy", missingConfig));
+
+        StrategyManager manager = new StrategyManager(List.of(macdStrategy), strategyProperties);
+
+        assertThat(manager.getAllStrategies()).containsExactly(macdStrategy);
+    }
+
+    @Test
+    @DisplayName("重复策略名称应让初始化失败")
+    void shouldFailFastOnDuplicateStrategyNames() {
+        Strategy duplicateMacd = createMockStrategy("MacdCross", BarEvent.class);
+
+        assertThatThrownBy(() -> new StrategyManager(
+                List.of(macdStrategy, duplicateMacd), strategyProperties))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Duplicate strategy name")
+                .hasMessageContaining("MacdCross");
     }
 }

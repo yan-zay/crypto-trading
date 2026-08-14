@@ -1,6 +1,8 @@
 package com.tj.crypto.storage.service;
 
 import com.tj.crypto.storage.entity.BarEventDO;
+import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.storage.entity.RawMessageDO;
 import com.tj.crypto.storage.mapper.BarEventMapper;
 import com.tj.crypto.storage.mapper.RawMessageMapper;
@@ -68,16 +70,36 @@ public class DataLineageService {
      */
     public String getDataVersion(String symbol, String timeframe, long from, long to) {
         List<BarEventDO> barEvents = barEventMapper.selectByTimeRange(symbol, timeframe, from, to);
-        if (barEvents.isEmpty()) {
-            return "empty";
-        }
+        return contentVersion(barEvents, symbol + ':' + timeframe);
+    }
 
-        // 拼接所有 BarEvent 的 ID 作为版本输入
+    /** Returns a version for exactly one exchange/market/symbol/timeframe series. */
+    public String getDataVersion(Instrument instrument, Timeframe timeframe, long from, long to) {
+        List<BarEventDO> barEvents = barEventMapper.selectByTimeRange(
+                instrument.exchange().getCode(), instrument.marketType().getCode(),
+                instrument.symbol(), timeframe.getCode(), from, to);
+        return contentVersion(barEvents, instrument.id().value() + ':' + timeframe.getCode());
+    }
+
+    private String contentVersion(List<BarEventDO> barEvents, String seriesIdentity) {
+        if (barEvents.isEmpty()) return "empty";
+
+        // Hash canonical values rather than row IDs so corrected/upserted candles change the version.
         StringBuilder sb = new StringBuilder();
         for (BarEventDO event : barEvents) {
-            sb.append(event.getId()).append(':');
+            sb.append(event.getExchange()).append('|')
+                    .append(event.getMarketType()).append('|')
+                    .append(event.getSymbol()).append('|')
+                    .append(event.getTimeframe()).append('|')
+                    .append(event.getOpenTime()).append('|')
+                    .append(event.getOpenPrice()).append('|')
+                    .append(event.getHighPrice()).append('|')
+                    .append(event.getLowPrice()).append('|')
+                    .append(event.getClosePrice()).append('|')
+                    .append(event.getVolume()).append('|')
+                    .append(event.getQuoteVolume()).append(';');
         }
-        sb.append(symbol).append(':').append(timeframe);
+        sb.append(seriesIdentity);
 
         String hash = computeSha256(sb.toString());
         return hash.substring(0, 16);

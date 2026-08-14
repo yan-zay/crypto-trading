@@ -29,6 +29,7 @@ import com.tj.crypto.strategy.impl.MacdCrossStrategy;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -47,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 注意：此测试需要网络连接访问 Binance API。
  * 使用 7 天 1min 数据（约 10080 根 K 线），避免内存问题。
  */
+@Tag("external")
 class FullBacktestTest {
 
     private static final String SYMBOL = "BTCUSDT";
@@ -103,7 +105,7 @@ class FullBacktestTest {
         RiskProperties riskProperties = new RiskProperties();
         ExecutionEngine executionEngine = new ExecutionEngine(
                 new RiskEngine(List.of()),
-                new PositionSizer(),
+                new PositionSizer(riskProperties),
                 new FixedSlippageModel(riskProperties),
                 new com.tj.crypto.risk.KillSwitch());
 
@@ -131,12 +133,16 @@ class FullBacktestTest {
     }
 
     @Test
-    @DisplayName("至少产生 1 个信号")
-    void shouldGenerateAtLeastOneSignal() {
+    @DisplayName("至少产生 10 个信号和 5 笔交易")
+    void shouldGenerateSufficientSignalsAndTrades() {
         assertThat(cachedResult.signals())
-                .as("MACD strategy should generate at least 1 signal from %d days of %s data",
+                .as("MACD strategy should generate at least 10 signals from %d days of %s data",
                         DAYS_BACK, SYMBOL)
-                .isNotEmpty();
+                .hasSizeGreaterThanOrEqualTo(10);
+        assertThat(cachedResult.trades())
+                .as("MACD strategy should generate at least 5 trades from %d days of %s data",
+                        DAYS_BACK, SYMBOL)
+                .hasSizeGreaterThanOrEqualTo(5);
     }
 
     @Test

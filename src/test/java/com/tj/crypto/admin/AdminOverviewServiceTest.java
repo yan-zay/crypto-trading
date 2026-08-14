@@ -59,7 +59,7 @@ class AdminOverviewServiceTest {
         Strategy strategy2 = mock(Strategy.class);
         when(strategyManager.getAllStrategies()).thenReturn(List.of(strategy1, strategy2));
         when(strategyManager.getActiveStrategies()).thenReturn(List.of(strategy1));
-        when(factorRegistry.getRegisteredFactors()).thenReturn(List.of("SMA_20", "RSI_14", "MACD_HIST"));
+        when(factorRegistry.getRegisteredFactors()).thenReturn(List.of("SMA", "RSI", "MACD_HIST"));
         when(signalCollector.getAllSignals()).thenReturn(List.of());
 
         OverviewDTO overview = adminOverviewService.getOverview();

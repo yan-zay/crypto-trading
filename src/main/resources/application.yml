@@ -4,40 +4,90 @@ server:
 
 spring:
   profiles:
-    active: dev
-#    active: sit
-#    active: uat
-#    active: pro
+    default: dev
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/id_generator?useUnicode=true&characterEncoding=UTF-8
+    url: jdbc:mysql://127.0.0.1:3306/crypto_trading?useUnicode=true&characterEncoding=UTF-8&allowPublicKeyRetrieval=true&useSSL=false
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
 
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+
+# Actuator + Prometheus 指标
+management:
+  server:
+    # Management endpoints stay on loopback unless an authenticated monitoring network is configured.
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+    port: ${MANAGEMENT_PORT:51105}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: crypto-trading
 
 id:
   length: 9
 
 # Coinglass API 配置
 crypto:
+  auth:
+    secret-key: ${AUTH_SECRET:default-secret-change-in-production}
+    token-ttl-ms: ${ADMIN_TOKEN_TTL_MS:900000}
   binance:
-    symbols: [BTCUSDT, ETHUSDT, SOLUSDT]
     historical:
-      base-url: https://fapi.binance.com
+      spot-base-url: ${BINANCE_SPOT_REST_URL:https://api.binance.com}
+      perpetual-base-url: ${BINANCE_PERPETUAL_REST_URL:https://fapi.binance.com}
   coinglass:
     api-key: ${COINGLASS_API_KEY:}
+    websocket-enabled: ${COINGLASS_WEBSOCKET_ENABLED:true}
+    websocket-url: ${COINGLASS_WS_URL:wss://open-ws.coinglass.com/ws-api}
+    rest-base-url: ${COINGLASS_REST_URL:https://open-api-v4.coinglass.com}
+    price-exchange: ${COINGLASS_PRICE_EXCHANGE:Binance}
+    kline-polling-enabled: ${COINGLASS_KLINE_POLLING_ENABLED:true}
+    kline-polling-interval-ms: ${COINGLASS_KLINE_POLLING_INTERVAL_MS:60000}
+    symbols: [BTCUSDT, ETHUSDT]
+    timeframes: [1m]
+    market-types: [SPOT, PERPETUAL]
+  market-data:
+    universe:
+      exchanges: [BINANCE, COINGLASS, OKX]
+      market-types: [SPOT, PERPETUAL]
+      symbols: [BTCUSDT, ETHUSDT]
   proxy:
+    enabled: ${PROXY_ENABLED:false}
     host: ${PROXY_HOST:127.0.0.1}
     port: ${PROXY_PORT:10808}
   websocket:
-    baseUrl: ${BINANCE_WS_BASE_URL:wss://fstream.binance.com}
-    websocketUrl: ${BINANCE_WS_URL:wss://fstream.binance.com/ws/btcusdt@kline_1m}
-    # WebSocket 客户端实现：tyrus（默认） 或 okhttp
-    client-type: ${WS_CLIENT_TYPE:tyrus}
+    # WebSocket 客户端实现：okhttp（默认）
+    client-type: ${WS_CLIENT_TYPE:okhttp}
+  connector:
+    symbols: ${BINANCE_SYMBOLS:BTCUSDT,ETHUSDT}
+    binance-enabled: ${BINANCE_ENABLED:true}
+    binance-spot-ws-url: ${BINANCE_SPOT_WS_URL:wss://stream.binance.com:9443/stream}
+    binance-perpetual-ws-url: ${BINANCE_PERPETUAL_WS_URL:wss://fstream.binance.com/stream}
+    binance-timeframes: ${BINANCE_TIMEFRAMES:1m}
+    okx:
+      enabled: ${OKX_ENABLED:true}
+      websocket-url: ${OKX_WS_URL:wss://ws.okx.com:8443/ws/v5/business}
+      rest-base-url: ${OKX_REST_BASE_URL:https://www.okx.com}
+      instruments: ${OKX_INSTRUMENTS:BTC-USDT,ETH-USDT,BTC-USDT-SWAP,ETH-USDT-SWAP}
+      timeframes: ${OKX_TIMEFRAMES:1m}
   strategy:
     configs:
       LiquidationSpike:
@@ -60,10 +110,82 @@ crypto:
         enabled: true
         symbols: [BTCUSDT, ETHUSDT]
   risk:
+    # Every process polls the durable singleton; read failure forces local HALT.
+    kill-switch-refresh-interval-ms: ${KILL_SWITCH_REFRESH_INTERVAL_MS:1000}
     max-loss-per-trade-pct: 2.0
     max-daily-loss-pct: 5.0
     max-size-pct: 30.0
+    max-total-exposure-pct: 80.0
+    max-symbol-exposure-pct: 40.0
+    max-strategy-budget-pct: 50.0
+    # Any order decision using an older or implausibly future-dated signed account snapshot fails closed.
+    account-snapshot-max-age-ms: ${LIVE_ACCOUNT_SNAPSHOT_MAX_AGE_MS:5000}
+    account-snapshot-max-future-skew-ms: ${LIVE_ACCOUNT_SNAPSHOT_MAX_FUTURE_SKEW_MS:1000}
     slippage-bps: 5
+  execution:
+    simulation:
+      spread-bps: 2
+      max-participation-rate: 0.05
+      impact-coefficient-bps: 25
+      max-impact-bps: 100
+      latency-bps-per-second: 0.5
+      max-mark-age-ms: 300000
+  private-trading:
+    # Research-only is the fail-closed product default. LIVE_CANARY additionally requires
+    # a target jurisdiction and a written legal-approval reference.
+    operating-mode: ${TRADING_OPERATING_MODE:RESEARCH_ONLY}
+    target-jurisdiction: ${TRADING_TARGET_JURISDICTION:}
+    legal-approval-reference: ${TRADING_LEGAL_APPROVAL_REFERENCE:}
+    live-write-enabled: ${LIVE_TRADING_WRITE_ENABLED:false}
+    user-streams-enabled: ${PRIVATE_USER_STREAMS_ENABLED:false}
+    receive-window-ms: ${PRIVATE_API_RECEIVE_WINDOW_MS:5000}
+    reconciliation-batch-size: ${LIVE_RECONCILIATION_BATCH_SIZE:200}
+    reconciliation-interval-ms: ${LIVE_RECONCILIATION_INTERVAL_MS:60000}
+    writer-lease-ttl-ms: ${LIVE_WRITER_LEASE_TTL_MS:15000}
+    writer-lease-renew-interval-ms: ${LIVE_WRITER_LEASE_RENEW_INTERVAL_MS:5000}
+    binance:
+      enabled: ${BINANCE_PRIVATE_ENABLED:false}
+      write-enabled: ${BINANCE_WRITE_ENABLED:false}
+      api-key: ${BINANCE_API_KEY:}
+      secret-key: ${BINANCE_SECRET_KEY:}
+      spot-rest-base-url: ${BINANCE_SPOT_REST_URL:https://api.binance.com}
+      perpetual-rest-base-url: ${BINANCE_PERPETUAL_REST_URL:https://fapi.binance.com}
+      spot-user-stream-url: ${BINANCE_SPOT_USER_STREAM_URL:wss://stream.binance.com:9443/ws}
+      perpetual-user-stream-url: ${BINANCE_PERPETUAL_USER_STREAM_URL:wss://fstream.binance.com/ws}
+      testnet: ${BINANCE_TESTNET:false}
+      hedge-mode: ${BINANCE_HEDGE_MODE:false}
+    okx:
+      enabled: ${OKX_PRIVATE_ENABLED:false}
+      write-enabled: ${OKX_WRITE_ENABLED:false}
+      api-key: ${OKX_API_KEY:}
+      secret-key: ${OKX_SECRET_KEY:}
+      passphrase: ${OKX_PASSPHRASE:}
+      rest-base-url: ${OKX_REST_BASE_URL:https://www.okx.com}
+      private-websocket-url: ${OKX_PRIVATE_WS_URL:wss://ws.okx.com:8443/ws/v5/private}
+      simulated-trading: ${OKX_SIMULATED_TRADING:false}
+      hedge-mode: ${OKX_HEDGE_MODE:false}
+  dataset-export:
+    directory: ${DATASET_EXPORT_DIR:target/exports}
+    max-rows: 1000000
+  instrument-metadata:
+    scheduled-enabled: ${INSTRUMENT_METADATA_REFRESH_ENABLED:false}
+    refresh-cron: ${INSTRUMENT_METADATA_REFRESH_CRON:0 15 3 * * *}
+  backtest-jobs:
+    poll-interval-ms: ${BACKTEST_JOB_POLL_INTERVAL_MS:1000}
+  slo:
+    window-ms: ${SLO_WINDOW_MS:3600000}
+    snapshot-interval-ms: ${SLO_SNAPSHOT_INTERVAL_MS:60000}
+    paper-order-latency-threshold-ms: ${PAPER_ORDER_SLO_LATENCY_MS:500}
+    market-data-freshness-threshold-ms: ${MARKET_DATA_SLO_FRESHNESS_MS:10000}
+  alerting:
+    check-interval-ms: ${ALERT_CHECK_INTERVAL_MS:60000}
+    webhook-enabled: ${ALERT_WEBHOOK_ENABLED:false}
+    webhook-url: ${ALERT_WEBHOOK_URL:}
+    webhook-bearer-token: ${ALERT_WEBHOOK_BEARER_TOKEN:}
+  persistence:
+    bar-flush-interval-ms: ${BAR_FLUSH_INTERVAL_MS:1000}
+    bar-spool-file: ${BAR_SPOOL_FILE:target/spool/finalized-bars.jsonl}
+    bar-batch-size: ${BAR_PERSISTENCE_BATCH_SIZE:100}
   factor:
     sma-period: 20
     ema-period: 20

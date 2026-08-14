@@ -5,6 +5,9 @@ import com.tj.crypto.admin.application.AdminOverviewService;
 import com.tj.crypto.admin.application.AuditService;
 import com.tj.crypto.admin.application.AuthService;
 import com.tj.crypto.admin.application.ConfigVersionService;
+import com.tj.crypto.admin.domain.ConfigStatus;
+import com.tj.crypto.admin.domain.ConfigType;
+import com.tj.crypto.admin.domain.ConfigVersion;
 import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
 import com.tj.crypto.admin.dto.OverviewDTO;
@@ -16,7 +19,9 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
+import com.tj.crypto.observability.MetricsSnapshot;
 import com.tj.crypto.observability.SystemMetrics;
+import com.tj.crypto.observability.alert.AlertRule;
 import com.tj.crypto.observability.alert.AlertService;
 import com.tj.crypto.storage.service.AutoBackfillService;
 import com.tj.crypto.storage.service.DataCoverageService;
@@ -58,6 +63,7 @@ class AdminControllerTest {
     private SystemMetrics systemMetrics;
     private AuthService authService;
     private AuditService auditService;
+    private com.tj.crypto.factor.analysis.FactorAnalyzer factorAnalyzer;
 
     @BeforeEach
     void setUp() {
@@ -71,11 +77,26 @@ class AdminControllerTest {
         systemMetrics = mock(SystemMetrics.class);
         authService = mock(AuthService.class);
         auditService = mock(AuditService.class);
+        factorAnalyzer = mock(com.tj.crypto.factor.analysis.FactorAnalyzer.class);
         AdminController controller = new AdminController(adminService, adminOverviewService,
                 configVersionService, strategyManager, dataCoverageService, autoBackfillService,
                 new com.tj.crypto.risk.KillSwitch(), alertService, systemMetrics,
-                authService, auditService);
+                authService, auditService, factorAnalyzer,
+                new com.tj.crypto.config.properties.MarketUniverseProperties());
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/login 通过 JSON body 登录，避免凭据进入 URL")
+    void shouldLoginWithJsonBody() throws Exception {
+        when(authService.login("admin", "secret")).thenReturn("token-value");
+
+        mockMvc.perform(post("/api/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"admin\",\"password\":\"secret\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.token").value("token-value"));
     }
 
     @Test
@@ -140,8 +161,8 @@ class AdminControllerTest {
     @DisplayName("GET /api/admin/factors 返回因子列表")
     void shouldReturnFactorList() throws Exception {
         when(adminService.getAllFactors()).thenReturn(List.of(
-                FactorInfoDTO.builder().name("SMA_20").build(),
-                FactorInfoDTO.builder().name("RSI_14").build(),
+                FactorInfoDTO.builder().name("SMA").build(),
+                FactorInfoDTO.builder().name("RSI").build(),
                 FactorInfoDTO.builder().name("MACD_HIST").build()
         ));
 
@@ -149,8 +170,8 @@ class AdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(3))
-                .andExpect(jsonPath("$[0].name").value("SMA_20"))
-                .andExpect(jsonPath("$[1].name").value("RSI_14"))
+                .andExpect(jsonPath("$[0].name").value("SMA"))
+                .andExpect(jsonPath("$[1].name").value("RSI"))
                 .andExpect(jsonPath("$[2].name").value("MACD_HIST"));
     }
 
@@ -410,5 +431,147 @@ class AdminControllerTest {
                 .andExpect(jsonPath("$.maxDailyLossPct").value(5.0))
                 .andExpect(jsonPath("$.maxSizePct").value(30.0))
                 .andExpect(jsonPath("$.slippageBps").value(5));
+    }
+
+    // ========== 配置版本管理端点测试 ==========
+
+    @Test
+    @DisplayName("POST /api/admin/configs/draft 创建配置草稿")
+    void shouldCreateConfigDraft() throws Exception {
+        ConfigVersion draft = new ConfigVersion(
+                "cv-test123", ConfigType.STRATEGY,
+                "MacdCross", "{\"enabled\":true}",
+                ConfigStatus.DRAFT,
+                "test", null,
+                java.time.Instant.now(), java.time.Instant.now());
+        when(configVersionService.createDraft(
+                ConfigType.STRATEGY, "MacdCross",
+                "{\"enabled\":true}", "test"))
+                .thenReturn(draft);
+
+        mockMvc.perform(post("/api/admin/configs/draft")
+                        .param("type", "STRATEGY")
+                        .param("configKey", "MacdCross")
+                        .param("contentJson", "{\"enabled\":true}")
+                        .param("remark", "test"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionId").value("cv-test123"))
+                .andExpect(jsonPath("$.configKey").value("MacdCross"))
+                .andExpect(jsonPath("$.status").value("DRAFT"));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/configs/{versionId}/validate 验证配置草稿")
+    void shouldValidateConfigDraft() throws Exception {
+        ConfigVersion validated = new ConfigVersion(
+                "cv-test123", ConfigType.STRATEGY,
+                "MacdCross", "{\"enabled\":true}",
+                ConfigStatus.VALIDATED,
+                "test", null,
+                java.time.Instant.now(), java.time.Instant.now());
+        when(configVersionService.validate("cv-test123")).thenReturn(validated);
+
+        mockMvc.perform(post("/api/admin/configs/cv-test123/validate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionId").value("cv-test123"))
+                .andExpect(jsonPath("$.status").value("VALIDATED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/configs/{versionId}/publish 发布配置版本")
+    void shouldPublishConfigVersion() throws Exception {
+        ConfigVersion published = new ConfigVersion(
+                "cv-test123", ConfigType.STRATEGY,
+                "MacdCross", "{\"enabled\":true}",
+                ConfigStatus.ACTIVE,
+                "test", "admin",
+                java.time.Instant.now(), java.time.Instant.now());
+        when(configVersionService.publish("cv-test123", "admin")).thenReturn(published);
+
+        com.tj.crypto.admin.domain.UserDO user = new com.tj.crypto.admin.domain.UserDO();
+        user.setUsername("admin");
+
+        mockMvc.perform(post("/api/admin/configs/cv-test123/publish")
+                        .requestAttr("currentUser", user))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionId").value("cv-test123"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.publishedBy").value("admin"));
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/configs/{versionId}/rollback 回滚配置版本")
+    void shouldRollbackConfigVersion() throws Exception {
+        ConfigVersion rolledBack = new ConfigVersion(
+                "cv-old456", ConfigType.STRATEGY,
+                "MacdCross", "{\"enabled\":false}",
+                ConfigStatus.ACTIVE,
+                "old version", "admin",
+                java.time.Instant.now(), java.time.Instant.now());
+        when(configVersionService.rollback("cv-test123", "cv-old456")).thenReturn(rolledBack);
+
+        mockMvc.perform(post("/api/admin/configs/cv-test123/rollback")
+                        .param("targetVersionId", "cv-old456"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionId").value("cv-old456"))
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/configs 查询配置")
+    void shouldGetConfigs() throws Exception {
+        ConfigVersion active = new ConfigVersion(
+                "cv-test123", ConfigType.STRATEGY,
+                "MacdCross", "{\"enabled\":true}",
+                ConfigStatus.ACTIVE,
+                "test", "admin",
+                java.time.Instant.now(), java.time.Instant.now());
+        when(configVersionService.getActiveByType(ConfigType.STRATEGY))
+                .thenReturn(List.of(active));
+
+        mockMvc.perform(get("/api/admin/configs")
+                        .param("type", "STRATEGY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].versionId").value("cv-test123"))
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/alerts 返回告警历史")
+    void shouldReturnAlerts() throws Exception {
+        when(alertService.getAlertHistory()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/admin/alerts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    @DisplayName("POST /api/admin/alerts/rules 添加告警规则")
+    void shouldAddAlertRule() throws Exception {
+        AlertRule rule = new AlertRule(
+                "test-rule", "HIGH_ERROR_RATE", 100.0,
+                AlertRule.Severity.CRITICAL, true);
+
+        mockMvc.perform(post("/api/admin/alerts/rules")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(rule)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.rule").value("test-rule"));
+    }
+
+    @Test
+    @DisplayName("GET /api/admin/observability/metrics 返回可观测性指标")
+    void shouldReturnObservabilityMetrics() throws Exception {
+        MetricsSnapshot snapshot = new MetricsSnapshot(
+                0, 0, 0, 0, 0,
+                java.util.Collections.emptyMap(),
+                0, 0, 0, 0, 0, 0, 0);
+        when(systemMetrics.snapshot()).thenReturn(snapshot);
+
+        mockMvc.perform(get("/api/admin/observability/metrics"))
+                .andExpect(status().isOk());
     }
 }

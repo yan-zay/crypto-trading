@@ -25,6 +25,7 @@ public final class SignalEventConverter {
         SignalEventDO dobj = new SignalEventDO();
         dobj.setStrategyName(event.strategyName());
         dobj.setExchange(event.instrument().exchange().getCode());
+        dobj.setMarketType(event.instrument().marketType().name());
         dobj.setSymbol(event.instrument().symbol());
         dobj.setSignalType(event.type().getCode());
         dobj.setConfidence(event.confidence());

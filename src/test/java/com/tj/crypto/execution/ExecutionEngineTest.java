@@ -1,5 +1,6 @@
 package com.tj.crypto.execution;
 
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
@@ -8,6 +9,8 @@ import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.execution.model.OrderStatus;
+import com.tj.crypto.execution.journal.ExecutionJournal;
+import com.tj.crypto.execution.journal.ExecutionJournalException;
 import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskEngine;
@@ -47,6 +50,7 @@ class ExecutionEngineTest {
     private ExecutionEngine engine;
     private VirtualAccount account;
     private RiskEngine riskEngine;
+    private RiskProperties riskProperties;
     private FixedSlippageModel slippageModel;
     private KillSwitch killSwitch;
 
@@ -56,7 +60,7 @@ class ExecutionEngineTest {
     @BeforeEach
     void setUp() {
         account = new VirtualAccount(INITIAL_BALANCE);
-        RiskProperties riskProperties = new RiskProperties();
+        riskProperties = new RiskProperties();
         slippageModel = new FixedSlippageModel(riskProperties);
         killSwitch = new KillSwitch();
 
@@ -67,13 +71,13 @@ class ExecutionEngineTest {
             }
 
             @Override
-            public RiskCheckResult check(Order order, VirtualAccount account) {
+            public RiskCheckResult check(Order order, TradingAccount account) {
                 return RiskCheckResult.passed();
             }
         };
 
         riskEngine = new RiskEngine(List.of(alwaysPassRule));
-        engine = new ExecutionEngine(riskEngine, new PositionSizer(), slippageModel, killSwitch);
+        engine = new ExecutionEngine(riskEngine, new PositionSizer(riskProperties), slippageModel, killSwitch);
     }
 
     // ─── 辅助方法 ───────────────────────────────────────────────
@@ -174,7 +178,7 @@ class ExecutionEngineTest {
                 }
 
                 @Override
-                public RiskCheckResult check(Order order, VirtualAccount acct) {
+                public RiskCheckResult check(Order order, TradingAccount acct) {
                     BigDecimal orderValue = order.quantity().multiply(order.price());
                     BigDecimal limit = acct.getBalance()
                             .multiply(BigDecimal.valueOf(0.1))
@@ -191,7 +195,7 @@ class ExecutionEngineTest {
 
             RiskEngine strictRiskEngine = new RiskEngine(List.of(strictRule));
             ExecutionEngine strictEngine = new ExecutionEngine(
-                    strictRiskEngine, new PositionSizer(), slippageModel, killSwitch
+                    strictRiskEngine, new PositionSizer(riskProperties), slippageModel, killSwitch
             );
 
             SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);
@@ -217,41 +221,162 @@ class ExecutionEngineTest {
         @Test
         @DisplayName("余额为零时返回 REJECTED（INSUFFICIENT_BALANCE）")
         void shouldRejectWhenBalanceIsZero() {
-            // 将余额消耗殆尽：开一个大仓位
-            // 开仓用掉几乎全部余额
-            BigDecimal largeQty = BigDecimal.valueOf(0.199); // 0.199 * 50000 = 9950
+            // 用掉全部余额开仓
             account.openPosition(
                     new Instrument(Exchange.BINANCE, MarketType.PERPETUAL,
                             "ETHUSDT", "ETH", "USDT"),
-                    OrderSide.LONG, largeQty, BigDecimal.valueOf(50000), TIMESTAMP
-            );
-
-            // 余额只剩 50，再发 BUY 信号（PositionSizer 会计算出数量但开仓会失败）
-            SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);
-            Order order = engine.execute(buySignal, account, BTC_PRICE, TIMESTAMP);
-
-            assertNotNull(order, "余额不足时应产生非 null 订单");
-            // 由于 PositionSizer 使用 30% 余额计算，50 * 30% = 15，15/50000 = 0.0003
-            // 开仓成本 = 0.0003 * 50000 = 15 < 50，所以实际上会成功
-            // 这个测试验证的是极端情况：余额为 0
-            account.closePosition(
-                    new Instrument(Exchange.BINANCE, MarketType.PERPETUAL,
-                            "ETHUSDT", "ETH", "USDT"),
-                    BigDecimal.valueOf(50000), TIMESTAMP
-            );
-            // 现在余额 = 50 + 9950 + 0(PnL) = 10000，但已有交易记录
-            // 再开一个大仓用掉全部余额
-            account.openPosition(
-                    new Instrument(Exchange.BINANCE, MarketType.PERPETUAL,
-                            "SOLUSDT", "SOL", "USDT"),
                     OrderSide.LONG, BigDecimal.valueOf(0.2), BigDecimal.valueOf(50000), TIMESTAMP
             );
             // 余额 = 10000 - 10000 = 0
-            SignalEvent buySignal2 = signal(SignalType.BUY, BigDecimal.ONE);
-            Order order2 = engine.execute(buySignal2, account, BTC_PRICE, TIMESTAMP);
 
-            assertNotNull(order2, "余额为 0 时应产生非 null 订单");
-            assertEquals(OrderStatus.REJECTED, order2.status(), "余额为 0 时订单应被拒绝");
+            // 用一个不同交易对的信号来测试余额不足（避免触发平仓逻辑）
+            Instrument solUsdt = new Instrument(Exchange.BINANCE, MarketType.PERPETUAL,
+                    "SOLUSDT", "SOL", "USDT");
+            SignalEvent buySignal = new SignalEvent(
+                    "TestStrategy", solUsdt, SignalType.BUY, BigDecimal.ONE,
+                    "test signal", Map.of(), TIMESTAMP
+            );
+            Order order = engine.execute(buySignal, account, BigDecimal.valueOf(50000), TIMESTAMP);
+
+            assertNotNull(order, "余额为 0 时应产生非 null 订单");
+            assertEquals(OrderStatus.REJECTED, order.status(), "余额为 0 时订单应被拒绝");
+            assertEquals(OrderRejectReason.INSUFFICIENT_BALANCE, order.rejectReason(),
+                    "拒绝原因应为 INSUFFICIENT_BALANCE");
         }
+    }
+
+    // ─── 6. 合约交易：位置感知执行 ──────────────────────────────
+
+    @Nested
+    @DisplayName("合约交易（位置感知）")
+    class ContractTrading {
+
+        @Test
+        @DisplayName("SELL 信号 + 无持仓 → 开空仓")
+        void shouldOpenShortWhenNoPosition() {
+            SignalEvent sellSignal = signal(SignalType.SELL, BigDecimal.ONE);
+
+            Order order = engine.execute(sellSignal, account, BTC_PRICE, TIMESTAMP);
+
+            assertNotNull(order, "SELL 信号应产生非 null 订单");
+            assertEquals(OrderStatus.FILLED, order.status(), "订单状态应为 FILLED");
+            assertEquals(OrderSide.SHORT, order.side(), "订单方向应为 SHORT");
+            assertTrue(account.hasPosition(BTC_USDT), "应已开空仓");
+            assertEquals(OrderSide.SHORT, account.getPositionSide(BTC_USDT), "持仓方向应为 SHORT");
+        }
+
+        @Test
+        @DisplayName("BUY 信号 + 空持仓 → 平空仓")
+        void shouldCloseShortOnBuySignal() {
+            // 先开空仓
+            account.openPosition(BTC_USDT, OrderSide.SHORT,
+                    BigDecimal.valueOf(0.1), BTC_PRICE, TIMESTAMP);
+            assertEquals(OrderSide.SHORT, account.getPositionSide(BTC_USDT));
+
+            // BUY 信号应平空
+            SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);
+            Order order = engine.execute(buySignal, account, BTC_PRICE, TIMESTAMP + 1);
+
+            assertNotNull(order, "BUY 信号应产生非 null 订单");
+            assertEquals(OrderStatus.FILLED, order.status(), "订单状态应为 FILLED");
+            assertEquals(0, order.quantity().compareTo(BigDecimal.valueOf(0.1)),
+                    "平仓订单数量应等于原持仓数量");
+            assertFalse(account.hasPosition(BTC_USDT), "平空后不应持有仓位");
+        }
+
+        @Test
+        @DisplayName("SELL 信号 + 多持仓 → 平多仓（不开空）")
+        void shouldCloseLongOnSellSignal() {
+            // 先开多仓
+            account.openPosition(BTC_USDT, OrderSide.LONG,
+                    BigDecimal.valueOf(0.1), BTC_PRICE, TIMESTAMP);
+            assertEquals(OrderSide.LONG, account.getPositionSide(BTC_USDT));
+
+            // SELL 信号应平多
+            SignalEvent sellSignal = signal(SignalType.SELL, BigDecimal.ONE);
+            Order order = engine.execute(sellSignal, account, BTC_PRICE, TIMESTAMP + 1);
+
+            assertNotNull(order, "SELL 信号应产生非 null 订单");
+            assertEquals(OrderStatus.FILLED, order.status(), "订单状态应为 FILLED");
+            assertEquals(0, order.quantity().compareTo(BigDecimal.valueOf(0.1)),
+                    "平仓订单数量应等于原持仓数量");
+            assertFalse(account.hasPosition(BTC_USDT), "平多后不应持有仓位");
+        }
+
+        @Test
+        @DisplayName("BUY 信号 + 无持仓 → 开多仓")
+        void shouldOpenLongWhenNoPosition() {
+            SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);
+
+            Order order = engine.execute(buySignal, account, BTC_PRICE, TIMESTAMP);
+
+            assertNotNull(order, "BUY 信号应产生非 null 订单");
+            assertEquals(OrderStatus.FILLED, order.status(), "订单状态应为 FILLED");
+            assertEquals(OrderSide.LONG, order.side(), "订单方向应为 LONG");
+            assertTrue(account.hasPosition(BTC_USDT), "应已开多仓");
+            assertEquals(OrderSide.LONG, account.getPositionSide(BTC_USDT), "持仓方向应为 LONG");
+        }
+
+        @Test
+        @DisplayName("BUY 信号 + 多持仓 → 拒绝同向加仓（不误平仓）")
+        void shouldRejectSameSideLongWithoutClosingPosition() {
+            account.openPosition(BTC_USDT, OrderSide.LONG,
+                    BigDecimal.valueOf(0.1), BTC_PRICE, TIMESTAMP);
+
+            SignalEvent buySignal = signal(SignalType.BUY, BigDecimal.ONE);
+            Order order = engine.execute(buySignal, account, BTC_PRICE, TIMESTAMP + 1);
+
+            assertNotNull(order, "同向 BUY 信号应返回拒绝订单");
+            assertEquals(OrderStatus.REJECTED, order.status(), "同向 BUY 应被拒绝");
+            assertEquals(OrderRejectReason.POSITION_EXISTS, order.rejectReason(),
+                    "拒绝原因应为 POSITION_EXISTS");
+            assertTrue(account.hasPosition(BTC_USDT), "同向 BUY 不应误平已有多仓");
+            assertEquals(OrderSide.LONG, account.getPositionSide(BTC_USDT));
+            assertEquals(0, account.getPositionQuantity(BTC_USDT).compareTo(BigDecimal.valueOf(0.1)));
+        }
+
+        @Test
+        @DisplayName("SELL 信号 + 空持仓 → 拒绝同向加仓（不误平仓）")
+        void shouldRejectSameSideShortWithoutClosingPosition() {
+            account.openPosition(BTC_USDT, OrderSide.SHORT,
+                    BigDecimal.valueOf(0.1), BTC_PRICE, TIMESTAMP);
+
+            SignalEvent sellSignal = signal(SignalType.SELL, BigDecimal.ONE);
+            Order order = engine.execute(sellSignal, account, BTC_PRICE, TIMESTAMP + 1);
+
+            assertNotNull(order, "同向 SELL 信号应返回拒绝订单");
+            assertEquals(OrderStatus.REJECTED, order.status(), "同向 SELL 应被拒绝");
+            assertEquals(OrderRejectReason.POSITION_EXISTS, order.rejectReason(),
+                    "拒绝原因应为 POSITION_EXISTS");
+            assertTrue(account.hasPosition(BTC_USDT), "同向 SELL 不应误平已有空仓");
+            assertEquals(OrderSide.SHORT, account.getPositionSide(BTC_USDT));
+            assertEquals(0, account.getPositionQuantity(BTC_USDT).compareTo(BigDecimal.valueOf(0.1)));
+        }
+    }
+
+    @Test
+    @DisplayName("必需 OMS 持久化失败时应在账户变更前停止执行")
+    void shouldFailClosedWhenRequiredOmsJournalFails() {
+        ExecutionJournal unavailableOms = new ExecutionJournal() {
+            @Override
+            public void record(Order order, com.tj.crypto.execution.model.OrderEvent event,
+                               com.tj.crypto.backtest.portfolio.Trade trade) {
+                throw new IllegalStateException("database unavailable");
+            }
+
+            @Override
+            public boolean requiredForExecution() {
+                return true;
+            }
+        };
+        ExecutionEngine durableEngine = new ExecutionEngine(
+                riskEngine, new PositionSizer(riskProperties), slippageModel, killSwitch,
+                List.of(unavailableOms));
+
+        assertThrows(ExecutionJournalException.class,
+                () -> durableEngine.execute(signal(SignalType.BUY, BigDecimal.ONE),
+                        account, BTC_PRICE, TIMESTAMP));
+        assertFalse(account.hasPosition(BTC_USDT));
+        assertEquals(INITIAL_BALANCE, account.getBalance());
     }
 }

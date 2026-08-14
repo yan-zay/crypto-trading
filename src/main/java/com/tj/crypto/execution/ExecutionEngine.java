@@ -1,11 +1,16 @@
 package com.tj.crypto.execution;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.Trade;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.TradeSide;
+import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderEvent;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.execution.model.OrderType;
+import com.tj.crypto.execution.journal.ExecutionJournal;
+import com.tj.crypto.execution.journal.ExecutionJournalException;
 import com.tj.crypto.risk.KillSwitch;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskEngine;
@@ -13,9 +18,11 @@ import com.tj.crypto.risk.PositionSizer;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 执行引擎。
@@ -41,36 +48,98 @@ public class ExecutionEngine {
     private final PositionSizer positionSizer;
     private final SlippageModel slippageModel;
     private final KillSwitch killSwitch;
+    private final List<ExecutionJournal> executionJournals;
 
     public ExecutionEngine(RiskEngine riskEngine, PositionSizer positionSizer,
                            SlippageModel slippageModel, KillSwitch killSwitch) {
+        this(riskEngine, positionSizer, slippageModel, killSwitch, List.of());
+    }
+
+    @Autowired
+    public ExecutionEngine(RiskEngine riskEngine, PositionSizer positionSizer,
+                           SlippageModel slippageModel, KillSwitch killSwitch,
+                           List<ExecutionJournal> executionJournals) {
         this.riskEngine = riskEngine;
         this.positionSizer = positionSizer;
         this.slippageModel = slippageModel;
         this.killSwitch = killSwitch;
+        this.executionJournals = List.copyOf(executionJournals);
+    }
+
+    /**
+     * 创建共享执行规则但不写 OMS 的执行器，用于回测。
+     * 回测订单必须写入 backtest_run，而不能污染实时/模拟 OMS 订单表。
+     */
+    public ExecutionEngine withoutJournals() {
+        return new ExecutionEngine(riskEngine.newSession(), positionSizer, slippageModel,
+                new KillSwitch(), List.of());
+    }
+
+    /**
+     * Creates an account-scoped execution session while retaining OMS journals and
+     * the global kill switch. Used by paper accounts so a restart resets local risk state.
+     */
+    public ExecutionEngine newAccountSession() {
+        return new ExecutionEngine(riskEngine.newSession(), positionSizer, slippageModel,
+                killSwitch, executionJournals);
+    }
+
+    /**
+     * 执行交易信号（使用默认交易所规则）。
+     */
+    public Order execute(SignalEvent signal, TradingAccount account, BigDecimal currentPrice, long timestamp) {
+        return execute(signal, account, currentPrice, timestamp, ExchangeRules.DEFAULT, null);
+    }
+
+    /** Backtest overload with next-bar volume for capacity and market-impact modelling. */
+    public Order execute(SignalEvent signal, TradingAccount account, BigDecimal currentPrice,
+                         long timestamp, BigDecimal baseVolume) {
+        return execute(signal, account, currentPrice, timestamp, ExchangeRules.DEFAULT, baseVolume);
     }
 
     /**
      * 执行交易信号。
      *
      * @param signal        交易信号
-     * @param account       虚拟账户
+     * @param account       交易账户（VirtualAccount 或 FuturesAccount）
      * @param currentPrice  当前价格
      * @param timestamp     时间戳
+     * @param exchangeRules 交易所规则（价格/数量精度、最小交易量）
      * @return 执行后的订单（可能被拒绝），HOLD 信号返回 null
      */
-    public Order execute(SignalEvent signal, VirtualAccount account, BigDecimal currentPrice, long timestamp) {
+    public Order execute(SignalEvent signal, TradingAccount account, BigDecimal currentPrice,
+                         long timestamp, ExchangeRules exchangeRules) {
+        return execute(signal, account, currentPrice, timestamp, exchangeRules, null);
+    }
+
+    private Order execute(SignalEvent signal, TradingAccount account, BigDecimal currentPrice,
+                          long timestamp, ExchangeRules exchangeRules, BigDecimal baseVolume) {
         // 1. 信号类型转换为订单方向
         if (signal.type() == SignalType.HOLD) {
             return null; // HOLD 不产生订单
         }
 
         OrderSide side = signal.type() == SignalType.BUY ? OrderSide.LONG : OrderSide.SHORT;
+        TradeSide tradeSide = signal.type() == SignalType.BUY ? TradeSide.BUY : TradeSide.SELL;
+        OrderSide currentPosSide = account.getPositionSide(signal.instrument());
+        ExecutionAction action = resolveAction(side, currentPosSide);
+        OrderSide positionSide = action == ExecutionAction.CLOSE ? currentPosSide : side;
+        boolean reduceOnly = action == ExecutionAction.CLOSE;
+
+        // 现货账户不能凭空开空；SELL 仅能减少已有现货多仓。
+        if (signal.instrument().marketType() == MarketType.SPOT
+                && side == OrderSide.SHORT && currentPosSide == null) {
+            Order rejected = rejectedOrder(signal, tradeSide, side, OrderSide.LONG,
+                    true, BigDecimal.ZERO, OrderRejectReason.NO_POSITION, timestamp);
+            logOrderEvent(rejected, OrderEvent.rejected(
+                    rejected.orderId(), timestamp, OrderRejectReason.NO_POSITION));
+            return rejected;
+        }
 
         // 1.1 KillSwitch 检查
         if (killSwitch.isActive()) {
             if (killSwitch.getMode() == KillSwitch.Mode.HALT) {
-                Order rejected = Order.rejected(signal.instrument(), side, OrderType.MARKET,
+                Order rejected = rejectedOrder(signal, tradeSide, side, positionSide, reduceOnly,
                         BigDecimal.ZERO, OrderRejectReason.KILL_SWITCH, timestamp);
                 log.warn("[KILL_SWITCH] HALT mode — rejecting order for {}",
                         signal.instrument().symbol());
@@ -78,35 +147,72 @@ public class ExecutionEngine {
                         OrderRejectReason.KILL_SWITCH));
                 return rejected;
             }
-            if (killSwitch.getMode() == KillSwitch.Mode.CLOSE_ONLY && side == OrderSide.LONG) {
-                Order rejected = Order.rejected(signal.instrument(), side, OrderType.MARKET,
-                        BigDecimal.ZERO, OrderRejectReason.CLOSE_ONLY, timestamp);
-                log.warn("[KILL_SWITCH] CLOSE_ONLY mode — rejecting open order for {}",
-                        signal.instrument().symbol());
-                logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
-                        OrderRejectReason.CLOSE_ONLY));
-                return rejected;
+            if (killSwitch.getMode() == KillSwitch.Mode.CLOSE_ONLY) {
+                // CLOSE_ONLY：只允许反向信号平掉已有仓位，拒绝开仓和加仓。
+                if (action != ExecutionAction.CLOSE) {
+                    Order rejected = rejectedOrder(signal, tradeSide, side, positionSide, reduceOnly,
+                            BigDecimal.ZERO, OrderRejectReason.CLOSE_ONLY, timestamp);
+                    log.warn("[KILL_SWITCH] CLOSE_ONLY mode — rejecting open order for {}",
+                            signal.instrument().symbol());
+                    logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
+                            OrderRejectReason.CLOSE_ONLY));
+                    return rejected;
+                }
             }
         }
 
-        // 2. 计算仓位
-        BigDecimal quantity = positionSizer.calculateSize(signal, account, currentPrice);
-        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
-            Order rejected = Order.rejected(signal.instrument(), side, OrderType.MARKET, BigDecimal.ZERO,
-                    OrderRejectReason.INSUFFICIENT_BALANCE, timestamp);
+        if (action == ExecutionAction.REJECT_SAME_SIDE) {
+            Order rejected = rejectedOrder(signal, tradeSide, side, positionSide, reduceOnly,
+                    BigDecimal.ZERO, OrderRejectReason.POSITION_EXISTS, timestamp);
+            log.warn("[EXEC] Same-side signal rejected: {} already has {} position",
+                    signal.instrument().symbol(), currentPosSide);
             logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
-                    OrderRejectReason.INSUFFICIENT_BALANCE));
+                    OrderRejectReason.POSITION_EXISTS));
+            return rejected;
+        }
+
+        // 2. 计算仓位
+        BigDecimal quantity = action == ExecutionAction.CLOSE
+                ? account.getPositionQuantity(signal.instrument())
+                : positionSizer.calculateSize(signal, account, currentPrice);
+        if (quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            Order rejected = rejectedOrder(signal, tradeSide, side, positionSide, reduceOnly, BigDecimal.ZERO,
+                    action == ExecutionAction.CLOSE ? OrderRejectReason.NO_POSITION : OrderRejectReason.INSUFFICIENT_BALANCE,
+                    timestamp);
+            logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
+                    rejected.rejectReason()));
+            return rejected;
+        }
+
+        // 2.1 对齐到交易所规则
+        quantity = exchangeRules.alignQuantity(quantity);
+        BigDecimal executionPrice = exchangeRules.alignPrice(currentPrice);
+        ExecutionPricing pricing = slippageModel.quote(executionPrice, side, OrderType.MARKET,
+                quantity, baseVolume, action != ExecutionAction.CLOSE);
+        quantity = exchangeRules.alignQuantity(pricing.filledQuantity());
+        BigDecimal filledPrice = exchangeRules.alignPrice(pricing.fillPrice());
+
+        // 2.2 验证订单满足交易所规则
+        String validationError = exchangeRules.validate(executionPrice, quantity);
+        if (validationError != null) {
+            Order rejected = rejectedOrder(signal, tradeSide, side, positionSide, reduceOnly,
+                    quantity, OrderRejectReason.INVALID_ORDER, timestamp);
+            log.warn("[EXCHANGE_RULES] Order rejected: {} — {}", signal.instrument().symbol(), validationError);
+            logOrderEvent(rejected, OrderEvent.rejected(rejected.orderId(), timestamp,
+                    OrderRejectReason.INVALID_ORDER));
             return rejected;
         }
 
         // 3. 创建订单意图（CREATED）
-        Order order = Order.create(signal.instrument(), side, OrderType.MARKET,
-                quantity, currentPrice, timestamp);
-        logOrderEvent(order, OrderEvent.submitted(order.orderId(), timestamp));
+        Order order = Order.create(signal.strategyName(), signal.instrument(), tradeSide,
+                side, positionSide, reduceOnly, OrderType.MARKET,
+                quantity, executionPrice, timestamp);
+        logOrderEvent(order, OrderEvent.created(order.orderId(), timestamp));
 
         // 4. CREATED → SUBMITTED
-        order = OrderStateMachine.transition(order,
-                OrderEvent.submitted(order.orderId(), timestamp));
+        OrderEvent submittedEvent = OrderEvent.submitted(order.orderId(), timestamp);
+        order = OrderStateMachine.transition(order, submittedEvent);
+        logOrderEvent(order, submittedEvent);
 
         // 5. 风控检查
         RiskCheckResult riskResult = riskEngine.checkAll(order, account);
@@ -119,18 +225,19 @@ public class ExecutionEngine {
         }
 
         // 6. SUBMITTED → ACKNOWLEDGED
-        order = OrderStateMachine.transition(order,
-                OrderEvent.acknowledged(order.orderId(), timestamp));
+        OrderEvent acknowledgedEvent = OrderEvent.acknowledged(order.orderId(), timestamp);
+        order = OrderStateMachine.transition(order, acknowledgedEvent);
+        logOrderEvent(order, acknowledgedEvent);
 
         // 7. 应用滑点
-        BigDecimal executionPrice = slippageModel.applySlippage(currentPrice, side, OrderType.MARKET);
-
-        // 8. 执行交易
+        // 8. 执行交易（位置感知：反向信号平仓，无仓信号开仓）
         boolean success;
-        if (side == OrderSide.LONG) {
-            success = account.openPosition(signal.instrument(), side, quantity, executionPrice, timestamp);
+        Trade closedTrade = null;
+        if (action == ExecutionAction.CLOSE) {
+            closedTrade = account.closePosition(signal.instrument(), filledPrice, timestamp);
+            success = closedTrade != null;
         } else {
-            success = account.closePosition(signal.instrument(), executionPrice, timestamp) != null;
+            success = account.openPosition(signal.instrument(), side, quantity, filledPrice, timestamp);
         }
 
         if (!success) {
@@ -142,15 +249,34 @@ public class ExecutionEngine {
         }
 
         // 9. ACKNOWLEDGED → FILLED
-        Order filled = OrderStateMachine.transition(order,
-                OrderEvent.filled(order.orderId(), timestamp, executionPrice, quantity));
-        logOrderEvent(filled, OrderEvent.filled(order.orderId(), timestamp, executionPrice, quantity));
+        OrderEvent filledEvent = OrderEvent.filled(order.orderId(), timestamp, filledPrice, quantity);
+        Order filled = OrderStateMachine.transition(order, filledEvent);
+        riskEngine.onOrderFilled(filled);
+        logOrderEvent(filled, filledEvent, closedTrade);
 
         log.info("[EXEC] {} {} {} @ ${} (slippage: {} → {})",
-                side, quantity, signal.instrument().symbol(), executionPrice,
-                currentPrice, executionPrice);
+                side, quantity, signal.instrument().symbol(), filledPrice,
+                currentPrice, filledPrice);
 
         return filled;
+    }
+
+    private ExecutionAction resolveAction(OrderSide signalSide, OrderSide currentPositionSide) {
+        if (currentPositionSide == null) {
+            return ExecutionAction.OPEN;
+        }
+        if (currentPositionSide != signalSide) {
+            return ExecutionAction.CLOSE;
+        }
+        return ExecutionAction.REJECT_SAME_SIDE;
+    }
+
+    private Order rejectedOrder(SignalEvent signal, TradeSide tradeSide, OrderSide requestedSide,
+                                OrderSide positionSide, boolean reduceOnly, BigDecimal quantity,
+                                OrderRejectReason reason, long timestamp) {
+        return Order.rejected(signal.strategyName(), signal.instrument(), tradeSide,
+                requestedSide, positionSide, reduceOnly, OrderType.MARKET,
+                quantity, reason, timestamp);
     }
 
     /**
@@ -218,8 +344,31 @@ public class ExecutionEngine {
      * 记录订单事件日志。
      */
     private void logOrderEvent(Order order, OrderEvent event) {
+        logOrderEvent(order, event, null);
+    }
+
+    private void logOrderEvent(Order order, OrderEvent event, Trade trade) {
         log.debug("[ORDER_EVENT] orderId={} event={} status={} filled={}/{}",
                 order.orderId(), event.eventType(), order.status(),
                 order.filledQuantity(), order.quantity());
+        for (ExecutionJournal journal : executionJournals) {
+            try {
+                journal.record(order, event, trade);
+            } catch (RuntimeException e) {
+                log.error("Failed to journal order event: orderId={}, event={}",
+                        order.orderId(), event.eventType(), e);
+                if (journal.requiredForExecution()) {
+                    throw new ExecutionJournalException(
+                            "Required OMS journal failed for order " + order.orderId()
+                                    + " event " + event.eventType(), e);
+                }
+            }
+        }
+    }
+
+    private enum ExecutionAction {
+        OPEN,
+        CLOSE,
+        REJECT_SAME_SIDE
     }
 }

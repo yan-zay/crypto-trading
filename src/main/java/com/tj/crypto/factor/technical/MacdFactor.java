@@ -5,7 +5,8 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.FactorProperties;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 import org.ta4j.core.BarSeries;
@@ -24,18 +25,14 @@ import java.util.List;
  * MACD 死叉：histogram 从正变负 -> 卖出信号
  */
 @Component
-public class MacdFactor implements FactorCalculator {
+public class MacdFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
-    private final int fastPeriod;
-    private final int slowPeriod;
-    private final int signalPeriod;
+    private final FactorProperties factorProperties;
 
     public MacdFactor(BarCache barCache, FactorProperties factorProperties) {
         this.barCache = barCache;
-        this.fastPeriod = factorProperties.getMacdFast();
-        this.slowPeriod = factorProperties.getMacdSlow();
-        this.signalPeriod = factorProperties.getMacdSignal();
+        this.factorProperties = factorProperties;
     }
 
     @Override
@@ -45,8 +42,32 @@ public class MacdFactor implements FactorCalculator {
 
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
+        int slowPeriod = factorProperties.getMacdSlow();
+        int signalPeriod = factorProperties.getMacdSignal();
         int requiredBars = slowPeriod + signalPeriod + 10;
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, requiredBars);
+        return calculateFromBars(instrument, timeframe, bars);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        int requiredBars = factorProperties.getMacdSlow() + factorProperties.getMacdSignal() + 10;
+        return calculateFromBars(instrument, timeframe,
+                BarSlices.latestFinalized(bars, requiredBars));
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        int requiredBars = factorProperties.getMacdSlow() + factorProperties.getMacdSignal() + 10;
+        return calculateFromBars(instrument, timeframe,
+                barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, requiredBars));
+    }
+
+    private Factor calculateFromBars(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        int fastPeriod = factorProperties.getMacdFast();
+        int slowPeriod = factorProperties.getMacdSlow();
+        int signalPeriod = factorProperties.getMacdSignal();
+        int requiredBars = slowPeriod + signalPeriod + 10;
         if (bars.size() < requiredBars) {
             return Factor.warmup(name());
         }

@@ -9,10 +9,12 @@ import com.tj.crypto.admin.domain.ConfigVersion;
 import com.tj.crypto.admin.domain.UserDO;
 import com.tj.crypto.admin.dto.ConnectorStatusDTO;
 import com.tj.crypto.admin.dto.FactorInfoDTO;
+import com.tj.crypto.admin.dto.LoginRequest;
 import com.tj.crypto.admin.dto.OverviewDTO;
 import com.tj.crypto.admin.dto.RiskConfigDTO;
 import com.tj.crypto.admin.dto.StrategyInfoDTO;
 import com.tj.crypto.admin.dto.SystemStatusDTO;
+import com.tj.crypto.config.properties.MarketUniverseProperties;
 import com.tj.crypto.observability.MetricsSnapshot;
 import com.tj.crypto.observability.SystemMetrics;
 import com.tj.crypto.observability.alert.AlertEvent;
@@ -59,6 +61,9 @@ public class AdminController {
     private final SystemMetrics systemMetrics;
     private final AuthService authService;
     private final AuditService auditService;
+    private final com.tj.crypto.factor.analysis.FactorAnalyzer factorAnalyzer;
+
+    private final MarketUniverseProperties marketUniverse;
 
     // ========== 登录端点（不需要认证） ==========
 
@@ -68,9 +73,10 @@ public class AdminController {
      */
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
-            @RequestParam String username,
-            @RequestParam String password,
+            @RequestBody LoginRequest credentials,
             HttpServletRequest request) {
+        String username = credentials == null ? null : credentials.getUsername();
+        String password = credentials == null ? null : credentials.getPassword();
         try {
             String token = authService.login(username, password);
             auditService.logOperation(username, "LOGIN",
@@ -213,6 +219,50 @@ public class AdminController {
     }
 
     /**
+     * 策略详情。
+     * 返回策略基本信息 + 最近信号。
+     *
+     * @param name 策略名称
+     */
+    @GetMapping("/strategies/{name}/detail")
+    public ResponseEntity<Map<String, Object>> getStrategyDetail(@PathVariable String name) {
+        return strategyManager.getStrategy(name)
+                .map(s -> {
+                    List<SignalEvent> recentSignals = adminService.getRecentSignals(20).stream()
+                            .filter(sig -> sig.strategyName().equals(name))
+                            .toList();
+                    return ResponseEntity.ok(Map.<String, Object>of(
+                            "name", s.name(),
+                            "enabled", strategyManager.isStrategyEnabled(name),
+                            "listenedEvents", s.listenedEvents().stream()
+                                    .map(Class::getSimpleName)
+                                    .toList(),
+                            "recentSignals", recentSignals
+                    ));
+                })
+                .orElse(ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "error", "Unknown strategy: " + name
+                )));
+    }
+
+    /**
+     * 策略最近信号。
+     *
+     * @param name  策略名称
+     * @param limit 最大返回数量
+     */
+    @GetMapping("/strategies/{name}/signals")
+    public ResponseEntity<List<SignalEvent>> getStrategySignals(
+            @PathVariable String name,
+            @RequestParam(defaultValue = "10") int limit) {
+        List<SignalEvent> signals = adminService.getRecentSignals(limit).stream()
+                .filter(sig -> sig.strategyName().equals(name))
+                .toList();
+        return ResponseEntity.ok(signals);
+    }
+
+    /**
      * 查询数据覆盖率。
      *
      * @param symbol    交易对符号，如 "BTCUSDT"
@@ -221,12 +271,24 @@ public class AdminController {
      */
     @GetMapping("/coverage")
     public ResponseEntity<CoverageReport> getCoverage(
+            @RequestParam(defaultValue = "BINANCE") com.tj.crypto.common.domain.Exchange exchange,
+            @RequestParam(defaultValue = "PERPETUAL") com.tj.crypto.common.domain.MarketType marketType,
             @RequestParam String symbol,
             @RequestParam(defaultValue = "1m") String timeframe,
             @RequestParam(defaultValue = "30") int days) {
-        long now = System.currentTimeMillis();
-        long from = now - Duration.ofDays(days).toMillis();
-        CoverageReport report = dataCoverageService.checkCoverage(symbol, timeframe, from, now);
+        if (days < 1 || days > 3650) {
+            throw new IllegalArgumentException("days must be between 1 and 3650");
+        }
+        marketUniverse.validate(exchange, marketType, symbol);
+        com.tj.crypto.common.domain.Timeframe tf =
+                com.tj.crypto.common.domain.Timeframe.fromCode(timeframe);
+        long currentBucket = (System.currentTimeMillis() / tf.getMillis()) * tf.getMillis();
+        long to = currentBucket - tf.getMillis();
+        long from = to - Duration.ofDays(days).toMillis() + tf.getMillis();
+        com.tj.crypto.common.domain.Instrument instrument =
+                com.tj.crypto.common.domain.Instrument.of(exchange, marketType,
+                        MarketUniverseProperties.normalizeSymbol(symbol));
+        CoverageReport report = dataCoverageService.checkCoverage(instrument, timeframe, from, to);
         return ResponseEntity.ok(report);
     }
 
@@ -240,16 +302,21 @@ public class AdminController {
      */
     @PostMapping("/backfill")
     public ResponseEntity<Map<String, Object>> triggerBackfill(
+            @RequestParam(defaultValue = "BINANCE") com.tj.crypto.common.domain.Exchange exchange,
+            @RequestParam(defaultValue = "PERPETUAL") com.tj.crypto.common.domain.MarketType marketType,
             @RequestParam String symbol,
             @RequestParam(defaultValue = "1m") String timeframe,
             @RequestParam(defaultValue = "30") int days,
             HttpServletRequest request) {
-        int filled = autoBackfillService.backfillIfNeeded(symbol, timeframe, days);
+        int filled = autoBackfillService.backfillIfNeeded(
+                exchange, marketType, symbol, timeframe, days);
         String operator = getOperator(request);
         auditService.logOperation(operator, "TRIGGER_BACKFILL",
                 "symbol=" + symbol + ",timeframe=" + timeframe + ",days=" + days + ",filled=" + filled);
         return ResponseEntity.ok(Map.of(
                 "success", true,
+                "exchange", exchange,
+                "marketType", marketType,
                 "symbol", symbol,
                 "timeframe", timeframe,
                 "days", days,
@@ -293,7 +360,8 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> getKillSwitchStatus() {
         return ResponseEntity.ok(Map.of(
                 "active", killSwitch.isActive(),
-                "mode", killSwitch.getMode().name()
+                "mode", killSwitch.getMode().name(),
+                "persistenceHealthy", killSwitch.isPersistenceHealthy()
         ));
     }
 
@@ -306,8 +374,8 @@ public class AdminController {
     public ResponseEntity<Map<String, Object>> activateKillSwitch(
             @RequestParam(defaultValue = "HALT") KillSwitch.Mode mode,
             HttpServletRequest request) {
-        killSwitch.activate(mode);
         String operator = getOperator(request);
+        killSwitch.activate(mode, "ADMIN_API_ACTIVATION", operator);
         auditService.logOperation(operator, "KILL_SWITCH_ACTIVATE", "mode=" + mode);
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -321,8 +389,8 @@ public class AdminController {
      */
     @PostMapping("/risk/kill-switch/deactivate")
     public ResponseEntity<Map<String, Object>> deactivateKillSwitch(HttpServletRequest request) {
-        killSwitch.deactivate();
         String operator = getOperator(request);
+        killSwitch.deactivate("ADMIN_API_DEACTIVATION", operator);
         auditService.logOperation(operator, "KILL_SWITCH_DEACTIVATE", "");
         return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -356,18 +424,52 @@ public class AdminController {
      * 前置条件：版本必须处于 VALIDATED 状态。
      *
      * @param versionId   版本 ID
-     * @param publishedBy 发布人
      */
     @PostMapping("/configs/{versionId}/publish")
     public ResponseEntity<ConfigVersion> publishConfig(
             @PathVariable String versionId,
-            @RequestParam(defaultValue = "admin") String publishedBy,
             HttpServletRequest request) {
-        ConfigVersion published = configVersionService.publish(versionId, publishedBy);
         String operator = getOperator(request);
+        ConfigVersion published = configVersionService.publish(versionId, operator);
         auditService.logOperation(operator, "PUBLISH_CONFIG",
-                "versionId=" + versionId + ",publishedBy=" + publishedBy);
+                "versionId=" + versionId + ",publishedBy=" + operator);
         return ResponseEntity.ok(published);
+    }
+
+    /**
+     * 验证配置版本。
+     * 状态从 DRAFT 变为 VALIDATED，是发布前的必要步骤。
+     *
+     * @param versionId 版本 ID
+     */
+    @PostMapping("/configs/{versionId}/validate")
+    public ResponseEntity<ConfigVersion> validateConfig(
+            @PathVariable String versionId,
+            HttpServletRequest request) {
+        ConfigVersion validated = configVersionService.validate(versionId);
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "VALIDATE_CONFIG",
+                "versionId=" + versionId);
+        return ResponseEntity.ok(validated);
+    }
+
+    /**
+     * 回滚配置版本。
+     * 将当前 ACTIVE 版本回滚到指定的历史版本。
+     *
+     * @param versionId       当前版本 ID
+     * @param targetVersionId 目标版本 ID（回滚到此版本）
+     */
+    @PostMapping("/configs/{versionId}/rollback")
+    public ResponseEntity<ConfigVersion> rollbackConfig(
+            @PathVariable String versionId,
+            @RequestParam String targetVersionId,
+            HttpServletRequest request) {
+        ConfigVersion rolledBack = configVersionService.rollback(versionId, targetVersionId);
+        String operator = getOperator(request);
+        auditService.logOperation(operator, "ROLLBACK_CONFIG",
+                "from=" + versionId + ",to=" + targetVersionId);
+        return ResponseEntity.ok(rolledBack);
     }
 
     /**
@@ -388,6 +490,89 @@ public class AdminController {
                     .orElse(ResponseEntity.notFound().build());
         }
         return ResponseEntity.ok(configVersionService.getActiveByType(type));
+    }
+
+    /**
+     * 查询配置版本历史。
+     * 返回指定配置项的所有版本（按创建时间排序）。
+     *
+     * @param type      配置类型
+     * @param configKey 配置键
+     */
+    @GetMapping("/configs/history")
+    public ResponseEntity<List<ConfigVersion>> getConfigHistory(
+            @RequestParam ConfigType type,
+            @RequestParam String configKey) {
+        return ResponseEntity.ok(configVersionService.getHistory(type, configKey));
+    }
+
+    // ========== 研究平台端点 ==========
+
+    /**
+     * 因子 IC（信息系数）分析。
+     *
+     * @param factorName 因子名称（如 SMA, RSI, MACD_HIST）
+     * @param symbol     交易对
+     * @param timeframe  时间周期
+     * @param days       回溯天数
+     */
+    @GetMapping("/research/ic")
+    public ResponseEntity<Map<String, Object>> getFactorIC(
+            @RequestParam String factorName,
+            @RequestParam(defaultValue = "BINANCE") com.tj.crypto.common.domain.Exchange exchange,
+            @RequestParam(defaultValue = "PERPETUAL") com.tj.crypto.common.domain.MarketType marketType,
+            @RequestParam(defaultValue = "BTCUSDT") String symbol,
+            @RequestParam(defaultValue = "1h") String timeframe,
+            @RequestParam(defaultValue = "30") int days) {
+        try {
+            marketUniverse.validate(exchange, marketType, symbol);
+            com.tj.crypto.common.domain.Instrument instrument =
+                    com.tj.crypto.common.domain.Instrument.of(
+                            exchange, marketType,
+                            MarketUniverseProperties.normalizeSymbol(symbol));
+            com.tj.crypto.common.domain.Timeframe tf =
+                    com.tj.crypto.common.domain.Timeframe.fromCode(timeframe);
+
+            double ic = factorAnalyzer.calculateIC(factorName, instrument, tf, days);
+            double hitRate = factorAnalyzer.calculateHitRate(factorName, instrument, tf, days, 0.0);
+
+            return ResponseEntity.ok(Map.of(
+                    "factorName", factorName,
+                    "exchange", exchange,
+                    "marketType", marketType,
+                    "symbol", symbol,
+                    "timeframe", timeframe,
+                    "days", days,
+                    "ic", ic,
+                    "hitRate", hitRate
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
+    // ========== 数据质量端点 ==========
+
+    /**
+     * 数据质量概览。
+     * 检查所有配置交易对的 1 分钟 K 线覆盖率（最近 24 小时）。
+     */
+    @GetMapping("/data-quality")
+    public ResponseEntity<List<CoverageReport>> getDataQuality() {
+        long currentBucket = (System.currentTimeMillis() / 60_000L) * 60_000L;
+        long to = currentBucket - 60_000L;
+        long from = to - 24 * 60 * 60 * 1000L + 60_000L;
+        List<CoverageReport> reports = marketUniverse.getExchanges().stream()
+                .flatMap(exchange -> marketUniverse.getMarketTypes().stream()
+                        .flatMap(marketType -> marketUniverse.getSymbols().stream()
+                                .map(symbol -> dataCoverageService.checkCoverage(
+                                        com.tj.crypto.common.domain.Instrument.of(
+                                                exchange, marketType, symbol),
+                                        "1m", from, to))))
+                .toList();
+        return ResponseEntity.ok(reports);
     }
 
     // ========== 告警与可观测性端点 ==========

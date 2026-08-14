@@ -1,7 +1,7 @@
 package com.tj.crypto.risk.rules;
 
 import com.tj.crypto.backtest.portfolio.Trade;
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
@@ -19,10 +19,10 @@ import java.math.RoundingMode;
 @Component
 public class MaxDailyLossRule implements RiskRule {
 
-    private final BigDecimal maxDailyLossPct;
+    private final RiskProperties riskProperties;
 
     public MaxDailyLossRule(RiskProperties riskProperties) {
-        this.maxDailyLossPct = riskProperties.getMaxDailyLossPct();
+        this.riskProperties = riskProperties;
     }
 
     @Override
@@ -31,12 +31,15 @@ public class MaxDailyLossRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
-        // 计算当日已实现亏损
-        long todayStart = getTodayStartMillis();
+    public RiskCheckResult check(Order order, TradingAccount account) {
+        // 使用订单时间而非系统时间，支持回测场景
+        long now = order.createdAt();
+        long todayStart = getDayStartMillis(now);
+        BigDecimal maxDailyLossPct = riskProperties.getMaxDailyLossPct();
+
         BigDecimal dailyLoss = account.getTrades().stream()
-                .filter(t -> t.exitTime() >= todayStart && t.realizedPnL().compareTo(BigDecimal.ZERO) < 0)
-                .map(Trade::realizedPnL)
+                .filter(t -> t.exitTime() >= todayStart && t.exitTime() <= now && t.netPnL().compareTo(BigDecimal.ZERO) < 0)
+                .map(Trade::netPnL)
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .abs();
 
@@ -54,8 +57,13 @@ public class MaxDailyLossRule implements RiskRule {
         return RiskCheckResult.passed();
     }
 
-    private long getTodayStartMillis() {
-        // 简化：使用当前时间 - 24小时
-        return System.currentTimeMillis() - 24 * 60 * 60 * 1000;
+    /**
+     * 计算指定时间所在自然日的起始时间（UTC 00:00:00）。
+     * 使用 24 小时滚动窗口近似，避免依赖时区。
+     */
+    private long getDayStartMillis(long now) {
+        // 24 小时滚动窗口，适用于回测和实盘
+        long dayMillis = 24L * 60 * 60 * 1000;
+        return (now / dayMillis) * dayMillis;
     }
 }

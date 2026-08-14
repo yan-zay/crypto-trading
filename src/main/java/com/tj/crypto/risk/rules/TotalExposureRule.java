@@ -1,11 +1,13 @@
 package com.tj.crypto.risk.rules;
 
-import com.tj.crypto.backtest.portfolio.VirtualAccount;
+import com.tj.crypto.backtest.portfolio.TradingAccount;
+import com.tj.crypto.backtest.portfolio.AccountRiskSnapshot;
 import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderRejectReason;
 import com.tj.crypto.risk.RiskCheckResult;
 import com.tj.crypto.risk.RiskRule;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -24,6 +26,7 @@ public class TotalExposureRule implements RiskRule {
 
     private final BigDecimal maxTotalExposurePct;
 
+    @Autowired
     public TotalExposureRule() {
         this(DEFAULT_MAX_TOTAL_EXPOSURE_PCT);
     }
@@ -38,17 +41,15 @@ public class TotalExposureRule implements RiskRule {
     }
 
     @Override
-    public RiskCheckResult check(Order order, VirtualAccount account) {
+    public RiskCheckResult check(Order order, TradingAccount account) {
+        if (order.reduceOnly()) {
+            return RiskCheckResult.passed();
+        }
         BigDecimal orderValue = order.quantity().multiply(
                 order.price() != null ? order.price() : BigDecimal.ZERO);
-
-        // 当前所有持仓价值
-        BigDecimal existingPositionsValue = account.getPositions().values().stream()
-                .map(p -> p.quantity().multiply(p.entryPrice()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal totalAfterOrder = existingPositionsValue.add(orderValue);
-        BigDecimal accountEquity = account.getBalance().add(existingPositionsValue);
+        AccountRiskSnapshot snapshot = account.riskSnapshot(order.instrument(), order.price());
+        BigDecimal totalAfterOrder = snapshot.grossExposure().add(orderValue);
+        BigDecimal accountEquity = snapshot.equity();
 
         if (accountEquity.compareTo(BigDecimal.ZERO) <= 0) {
             return RiskCheckResult.passed();

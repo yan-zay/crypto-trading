@@ -1,5 +1,6 @@
 package com.tj.crypto.risk;
 
+import com.tj.crypto.backtest.portfolio.TradingAccount;
 import com.tj.crypto.backtest.portfolio.VirtualAccount;
 import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
@@ -33,7 +34,7 @@ class RiskEngineTest {
     void shouldPassWhenAllRulesPass() {
         RiskRule passRule = new RiskRule() {
             public String name() { return "PassRule"; }
-            public RiskCheckResult check(Order order, VirtualAccount acc) { return RiskCheckResult.passed(); }
+            public RiskCheckResult check(Order order, TradingAccount acc) { return RiskCheckResult.passed(); }
         };
 
         RiskEngine engine = new RiskEngine(List.of(passRule));
@@ -49,11 +50,11 @@ class RiskEngineTest {
     void shouldRejectWhenAnyRuleFails() {
         RiskRule passRule = new RiskRule() {
             public String name() { return "PassRule"; }
-            public RiskCheckResult check(Order order, VirtualAccount acc) { return RiskCheckResult.passed(); }
+            public RiskCheckResult check(Order order, TradingAccount acc) { return RiskCheckResult.passed(); }
         };
         RiskRule failRule = new RiskRule() {
             public String name() { return "FailRule"; }
-            public RiskCheckResult check(Order order, VirtualAccount acc) {
+            public RiskCheckResult check(Order order, TradingAccount acc) {
                 return RiskCheckResult.rejected(OrderRejectReason.RISK_REJECTED, "test rejection");
             }
         };
@@ -72,7 +73,7 @@ class RiskEngineTest {
     void shouldRejectWhenRuleThrows() {
         RiskRule errorRule = new RiskRule() {
             public String name() { return "ErrorRule"; }
-            public RiskCheckResult check(Order order, VirtualAccount acc) { throw new RuntimeException("boom"); }
+            public RiskCheckResult check(Order order, TradingAccount acc) { throw new RuntimeException("boom"); }
         };
 
         RiskEngine engine = new RiskEngine(List.of(errorRule));

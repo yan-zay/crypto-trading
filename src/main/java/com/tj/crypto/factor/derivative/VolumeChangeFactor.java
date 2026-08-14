@@ -4,7 +4,8 @@ import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.factor.cache.BarCache;
 import com.tj.crypto.factor.core.Factor;
-import com.tj.crypto.factor.core.FactorCalculator;
+import com.tj.crypto.factor.core.BarSlices;
+import com.tj.crypto.factor.core.BarHistoryFactorCalculator;
 import com.tj.crypto.marketdata.model.BarEvent;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +33,7 @@ import java.util.List;
  * - 下跌 + 缩量：抛压减弱，可能企稳
  */
 @Component
-public class VolumeChangeFactor implements FactorCalculator {
+public class VolumeChangeFactor implements BarHistoryFactorCalculator {
 
     private final BarCache barCache;
 
@@ -48,6 +49,20 @@ public class VolumeChangeFactor implements FactorCalculator {
     @Override
     public Factor calculate(Instrument instrument, Timeframe timeframe) {
         List<BarEvent> bars = barCache.getBars(instrument, timeframe, 3);
+        return calculateFromBars(bars);
+    }
+
+    @Override
+    public Factor calculate(Instrument instrument, Timeframe timeframe, List<BarEvent> bars) {
+        return calculateFromBars(BarSlices.latestFinalized(bars, 3));
+    }
+
+    @Override
+    public Factor calculateAsOf(Instrument instrument, Timeframe timeframe, long asOfTimestamp) {
+        return calculateFromBars(barCache.getBarsAsOf(instrument, timeframe, asOfTimestamp, 3));
+    }
+
+    private Factor calculateFromBars(List<BarEvent> bars) {
         if (bars.size() < 2) {
             return Factor.warmup(name());
         }

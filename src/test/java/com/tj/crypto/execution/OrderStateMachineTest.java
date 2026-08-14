@@ -74,8 +74,9 @@ class OrderStateMachineTest {
         @Test
         @DisplayName("SUBMITTED 经 ACKNOWLEDGED 事件转为 ACKNOWLEDGED")
         void shouldTransitionToAcknowledged() {
-            Order order = OrderStateMachine.transition(createOrder(),
-                    OrderEvent.submitted(createOrder().orderId(), T2));
+            Order created = createOrder();
+            Order order = OrderStateMachine.transition(created,
+                    OrderEvent.submitted(created.orderId(), T2));
 
             Order ack = OrderStateMachine.transition(order,
                     OrderEvent.acknowledged(order.orderId(), T3));
@@ -174,6 +175,24 @@ class OrderStateMachineTest {
                             BigDecimal.valueOf(50000), BigDecimal.valueOf(1.0)));
             assertEquals(OrderStatus.FILLED, filled.status());
         }
+
+        @Test
+        @DisplayName("撤单确认可同时带来最终部分成交")
+        void shouldApplyPartialFillBeforeCancelConfirmation() {
+            Order order = advanceToAcknowledged();
+            Order cancelReq = OrderStateMachine.transition(order,
+                    OrderEvent.cancelRequested(order.orderId(), T4));
+            Order partial = OrderStateMachine.transition(cancelReq,
+                    OrderEvent.partiallyFilled(cancelReq.orderId(), T5,
+                            BigDecimal.valueOf(50000), BigDecimal.valueOf(0.2)));
+            Order cancelAgain = OrderStateMachine.transition(partial,
+                    OrderEvent.cancelRequested(partial.orderId(), T5 + 1));
+            Order cancelled = OrderStateMachine.transition(cancelAgain,
+                    OrderEvent.cancelled(cancelAgain.orderId(), T5 + 2));
+
+            assertEquals(OrderStatus.CANCELLED, cancelled.status());
+            assertEquals(0, BigDecimal.valueOf(0.2).compareTo(cancelled.filledQuantity()));
+        }
     }
 
     @Nested
@@ -193,8 +212,9 @@ class OrderStateMachineTest {
         @Test
         @DisplayName("SUBMITTED 可拒绝")
         void shouldRejectFromSubmitted() {
-            Order order = OrderStateMachine.transition(createOrder(),
-                    OrderEvent.submitted(createOrder().orderId(), T2));
+            Order created = createOrder();
+            Order order = OrderStateMachine.transition(created,
+                    OrderEvent.submitted(created.orderId(), T2));
             Order rejected = OrderStateMachine.transition(order,
                     OrderEvent.rejected(order.orderId(), T3, OrderRejectReason.RISK_REJECTED));
             assertEquals(OrderStatus.REJECTED, rejected.status());
@@ -320,8 +340,9 @@ class OrderStateMachineTest {
         @Test
         @DisplayName("SUBMITTED 不能直接跳到 FILLED")
         void shouldRejectDirectFillFromSubmitted() {
-            Order order = OrderStateMachine.transition(createOrder(),
-                    OrderEvent.submitted(createOrder().orderId(), T2));
+            Order created = createOrder();
+            Order order = OrderStateMachine.transition(created,
+                    OrderEvent.submitted(created.orderId(), T2));
             assertThrows(IllegalStateException.class, () ->
                     OrderStateMachine.transition(order,
                             OrderEvent.filled(order.orderId(), T3,
@@ -342,8 +363,9 @@ class OrderStateMachineTest {
         @Test
         @DisplayName("SUBMITTED 不能请求撤单")
         void shouldRejectCancelFromSubmitted() {
-            Order order = OrderStateMachine.transition(createOrder(),
-                    OrderEvent.submitted(createOrder().orderId(), T2));
+            Order created = createOrder();
+            Order order = OrderStateMachine.transition(created,
+                    OrderEvent.submitted(created.orderId(), T2));
             assertThrows(IllegalStateException.class, () ->
                     OrderStateMachine.transition(order,
                             OrderEvent.cancelRequested(order.orderId(), T3)),
@@ -371,6 +393,24 @@ class OrderStateMachineTest {
             assertEquals(originalStatus, original.status());
             assertEquals(originalSubmittedAt, original.submittedAt());
         }
+    }
+
+    @Test
+    @DisplayName("UNKNOWN 可通过交易所确认恢复为 ACKNOWLEDGED")
+    void shouldRecoverUnknownOrderAfterReconciliation() {
+        Order created = createOrder();
+        Order submitted = OrderStateMachine.transition(created,
+                OrderEvent.submitted(created.orderId(), T2));
+        Order unknown = new Order(submitted.orderId(), submitted.clientOrderId(), submitted.instrument(),
+                submitted.side(), submitted.type(), submitted.quantity(), submitted.price(),
+                submitted.filledQuantity(), submitted.avgFillPrice(), OrderStatus.UNKNOWN,
+                submitted.rejectReason(), submitted.createdAt(), submitted.submittedAt(),
+                submitted.filledAt(), submitted.cancelledAt(), submitted.strategyId(),
+                submitted.tradeSide(), submitted.positionSide(), submitted.reduceOnly());
+
+        Order recovered = OrderStateMachine.transition(unknown,
+                OrderEvent.acknowledged(unknown.orderId(), T3));
+        assertEquals(OrderStatus.ACKNOWLEDGED, recovered.status());
     }
 
     // ─── 辅助方法 ────────────────────────────────────────────────

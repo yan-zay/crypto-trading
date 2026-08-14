@@ -1,6 +1,9 @@
 package com.tj.crypto.strategy.impl;
 
 import com.tj.crypto.factor.core.Factor;
+import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.common.domain.MarketSeriesKey;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.core.SignalEvent;
@@ -8,6 +11,7 @@ import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.strategy.core.Strategy;
 import com.tj.crypto.strategy.core.StrategyContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,13 +33,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>适用场景：配合趋势跟踪策略（如 SuperTrend、MACD）使用，在趋势反转时及时止损。
  */
 @Slf4j
+@Component
 public class AtrTrailingStopStrategy implements Strategy {
 
-    private static final String ATR_FACTOR_NAME = "ATR_14";
+    private static final String ATR_FACTOR_NAME = "ATR";
     private static final BigDecimal ATR_MULTIPLIER = BigDecimal.valueOf(2);
 
     /** 按交易对存储追踪止损状态 */
-    private final Map<String, TrailingStopState> stateMap = new ConcurrentHashMap<>();
+    private final Map<MarketSeriesKey, TrailingStopState> stateMap = new ConcurrentHashMap<>();
 
     @Override
     public String name() {
@@ -61,7 +66,7 @@ public class AtrTrailingStopStrategy implements Strategy {
         BigDecimal currentAtr = atrFactor.value();
         BigDecimal closePrice = bar.close();
         BigDecimal highPrice = bar.high();
-        String key = bar.instrument().symbol();
+        MarketSeriesKey key = MarketSeriesKey.of(bar.instrument(), bar.timeframe());
 
         TrailingStopState state = stateMap.get(key);
         SignalEvent signal = null;
@@ -105,9 +110,10 @@ public class AtrTrailingStopStrategy implements Strategy {
      * @param symbol      交易对符号
      * @param entryHigh   入场时的最高价
      */
-    public void startTracking(String symbol, BigDecimal entryHigh) {
-        stateMap.put(symbol, new TrailingStopState(entryHigh, true));
-        log.info("[AtrTrailingStop] Start tracking {}: highestHigh={}", symbol, entryHigh);
+    public void startTracking(Instrument instrument, Timeframe timeframe, BigDecimal entryHigh) {
+        stateMap.put(MarketSeriesKey.of(instrument, timeframe), new TrailingStopState(entryHigh, true));
+        log.info("[AtrTrailingStop] Start tracking {} {}: highestHigh={}",
+                instrument.id(), timeframe.getCode(), entryHigh);
     }
 
     /**
@@ -115,9 +121,10 @@ public class AtrTrailingStopStrategy implements Strategy {
      *
      * @param symbol 交易对符号
      */
-    public void stopTracking(String symbol) {
-        stateMap.put(symbol, new TrailingStopState(BigDecimal.ZERO, false));
-        log.info("[AtrTrailingStop] Stop tracking {}", symbol);
+    public void stopTracking(Instrument instrument, Timeframe timeframe) {
+        stateMap.put(MarketSeriesKey.of(instrument, timeframe),
+                new TrailingStopState(BigDecimal.ZERO, false));
+        log.info("[AtrTrailingStop] Stop tracking {} {}", instrument.id(), timeframe.getCode());
     }
 
     /**

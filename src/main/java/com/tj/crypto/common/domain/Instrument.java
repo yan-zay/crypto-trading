@@ -17,6 +17,21 @@ public record Instrument(
         String baseAsset,
         String quoteAsset
 ) {
+    public Instrument {
+        if (exchange == null || marketType == null) {
+            throw new IllegalArgumentException("exchange and marketType are required");
+        }
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException("symbol must not be blank");
+        }
+        symbol = symbol.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** 返回跨模块统一使用的稳定业务主键。 */
+    public InstrumentId id() {
+        return InstrumentId.from(this);
+    }
+
     /**
      * 从交易所原始 symbol 字符串构造 Instrument。
      * 简单拆分：从已知 quote asset 列表中匹配。

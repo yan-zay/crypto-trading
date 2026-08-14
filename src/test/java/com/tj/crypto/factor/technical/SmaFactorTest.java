@@ -63,7 +63,7 @@ class SmaFactorTest {
         Factor result = smaFactor.calculate(btcUsdt, Timeframe.M1);
 
         assertThat(result.quality()).isEqualTo(FactorQuality.READY);
-        assertThat(result.name()).isEqualTo("SMA_20");
+        assertThat(result.name()).isEqualTo("SMA");
         // SMA_20 的最后 20 根价格是 105-124，平均值 = (105+124)/2 = 114.5
         assertThat(result.value()).isEqualByComparingTo(BigDecimal.valueOf(114.5));
     }
@@ -71,6 +71,6 @@ class SmaFactorTest {
     @Test
     @DisplayName("因子名称应为 SMA_20")
     void shouldReturnCorrectName() {
-        assertThat(smaFactor.name()).isEqualTo("SMA_20");
+        assertThat(smaFactor.name()).isEqualTo("SMA");
     }
 }

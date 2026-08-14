@@ -3,6 +3,7 @@ package com.tj.crypto.service;
 import com.tj.crypto.client.OkHttpCoinglassWebSocketClient;
 import com.tj.crypto.config.properties.CoinglassProperties;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Async;
@@ -20,7 +21,7 @@ import static com.tj.crypto.config.ThreadPoolConfig.THREAD_POOL_NAME;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "crypto.websocket.client-type", havingValue = "okhttp")
+@ConditionalOnProperty(name = "crypto.websocket.client-type", havingValue = "okhttp", matchIfMissing = true)
 public class OkHttpCgWebSocketService {
 
     private final OkHttpCoinglassWebSocketClient webSocketClient;
@@ -38,6 +39,10 @@ public class OkHttpCgWebSocketService {
 
     @PostConstruct
     public void init() {
+        if (!coinglassProperties.isWebsocketEnabled()) {
+            log.info("Coinglass WebSocket service disabled by configuration");
+            return;
+        }
         String apiKey = coinglassProperties.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Coinglass API key not configured, OkHttp WebSocket service disabled");
@@ -47,13 +52,6 @@ public class OkHttpCgWebSocketService {
         enabled = true;
         tjTaskExecutor.execute(() -> {
             webSocketClient.connect();
-            // 连接成功后延迟订阅
-            try {
-                Thread.sleep(5000);
-                subscribeToSymbol();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
         });
     }
 
@@ -67,13 +65,9 @@ public class OkHttpCgWebSocketService {
         }
     }
 
-    private void subscribeToSymbol() {
-        String subscribeMessage = """
-                {
-                    "method": "subscribe",
-                    "channels": ["liquidationOrders"]
-                }
-                """;
-        webSocketClient.sendMessage(subscribeMessage);
+    @PreDestroy
+    public void shutdown() {
+        if (enabled) webSocketClient.disconnect();
     }
+
 }

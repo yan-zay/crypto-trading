@@ -1,5 +1,6 @@
 package com.tj.crypto.client;
 
+import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
@@ -74,6 +75,7 @@ class OkHttpBinanceWebSocketClientTest {
             BarEvent bar = (BarEvent) receivedEvent.get();
             assertThat(bar.instrument().symbol()).isEqualTo("BTCUSDT");
             assertThat(bar.instrument().baseAsset()).isEqualTo("BTC");
+            assertThat(bar.instrument().marketType()).isEqualTo(MarketType.PERPETUAL);
             assertThat(bar.open()).isEqualByComparingTo(new BigDecimal("16721.50"));
             assertThat(bar.high()).isEqualByComparingTo(new BigDecimal("16722.00"));
             assertThat(bar.low()).isEqualByComparingTo(new BigDecimal("16721.00"));
@@ -112,6 +114,24 @@ class OkHttpBinanceWebSocketClientTest {
             BarEvent bar = (BarEvent) receivedEvent.get();
             assertThat(bar.instrument().symbol()).isEqualTo("ETHUSDT");
             assertThat(bar.closed()).isTrue();
+        }
+
+        @Test
+        @DisplayName("应保留现货 combined stream 的市场身份")
+        void shouldPreserveSpotIdentityFromCombinedStream() {
+            client.handleMessage(MarketType.SPOT, """
+                    {"stream":"btcusdt@kline_1m","data":{
+                      "e":"kline","E":1672515782136,"s":"BTCUSDT","k":{
+                        "t":1672515780000,"T":1672515839999,"s":"BTCUSDT","i":"1m",
+                        "o":"100","h":"110","l":"90","c":"105","v":"2","q":"210","x":true
+                      }
+                    }}
+                    """);
+
+            BarEvent bar = (BarEvent) receivedEvent.get();
+            assertThat(bar).isNotNull();
+            assertThat(bar.instrument().marketType()).isEqualTo(MarketType.SPOT);
+            assertThat(bar.quoteVolume()).isEqualByComparingTo("210");
         }
 
         @Test
@@ -211,6 +231,26 @@ class OkHttpBinanceWebSocketClientTest {
     @Nested
     @DisplayName("连接状态")
     class ConnectionState {
+
+        @Test
+        @DisplayName("应使用 Binance 新 market WebSocket 端点")
+        void shouldUseMarketWebSocketEndpoint() {
+            assertThat(client.buildConnectionUrl())
+                    .isEqualTo("wss://fstream.binance.com/stream");
+            assertThat(client.buildConnectionUrl(MarketType.SPOT))
+                    .isEqualTo("wss://stream.binance.com:9443/stream");
+        }
+
+        @Test
+        @DisplayName("应构建配置交易对的 SUBSCRIBE 消息")
+        void shouldBuildConfiguredSubscribeMessage() {
+            assertThat(client.buildConfiguredKlineSubscribeMessage())
+                    .contains("\"btcusdt@kline_1m\"")
+                    .contains("\"ethusdt@kline_1m\"")
+                    .doesNotContain("/ws/");
+            assertThat(client.buildConfiguredKlineSubscribeMessage(MarketType.SPOT))
+                    .contains("btcusdt@kline_1m");
+        }
 
         @Test
         @DisplayName("初始状态应为未连接")

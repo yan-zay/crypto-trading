@@ -63,7 +63,7 @@ class EmaFactorTest {
         Factor result = emaFactor.calculate(btcUsdt, Timeframe.M1);
 
         assertThat(result.quality()).isEqualTo(FactorQuality.READY);
-        assertThat(result.name()).isEqualTo("EMA_20");
+        assertThat(result.name()).isEqualTo("EMA");
         // EMA 对递增序列应产生正值，且介于数据范围内
         assertThat(result.value()).isBetween(BigDecimal.valueOf(100), BigDecimal.valueOf(125));
     }
@@ -71,6 +71,6 @@ class EmaFactorTest {
     @Test
     @DisplayName("因子名称应为 EMA_20")
     void shouldReturnCorrectName() {
-        assertThat(emaFactor.name()).isEqualTo("EMA_20");
+        assertThat(emaFactor.name()).isEqualTo("EMA");
     }
 }

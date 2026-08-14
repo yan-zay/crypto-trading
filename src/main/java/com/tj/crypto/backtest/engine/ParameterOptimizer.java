@@ -55,8 +55,9 @@ public final class ParameterOptimizer {
 
         // 1. 计算时间范围
         long[] timeRange = BacktestRunner.calculateTimeRange(timeframeCode, daysBack);
-        long startTime = timeRange[0];
-        long endTime = timeRange[1];
+        long dataStartTime = timeRange[0];
+        long startTime = timeRange[1];
+        long endTime = timeRange[2];
 
         // 2. 解析交易工具和时间周期
         Timeframe timeframe = Timeframe.fromCode(timeframeCode);
@@ -81,7 +82,8 @@ public final class ParameterOptimizer {
                         int fast = params[0];
                         int slow = params[1];
                         int signal = params[2];
-                        return runSingleOptimization(instrument, timeframe, startTime, endTime,
+                        return runSingleOptimization(instrument, timeframe,
+                                dataStartTime, startTime, endTime,
                                 initialBalance, fast, slow, signal, dataProvider);
                     }, executor))
                     .collect(Collectors.toList());
@@ -218,6 +220,22 @@ public final class ParameterOptimizer {
                 fast, slow, signal, report.totalReturn(), report.totalTrades());
 
         return optResult;
+    }
+
+    private OptimizationResult runSingleOptimization(Instrument instrument, Timeframe timeframe,
+                                                      long dataStartTime, long startTime, long endTime,
+                                                      double initialBalance,
+                                                      int fast, int slow, int signal,
+                                                      HistoricalDataProvider dataProvider) {
+        FactorProperties factorProperties = FactorProperties.customMacd(fast, slow, signal);
+        BacktestResult result = BacktestRunner.runWithProvider(
+                instrument, timeframe, dataStartTime, startTime, endTime,
+                initialBalance, factorProperties, dataProvider);
+        PerformanceReport report = result.performanceReport();
+        return new OptimizationResult(
+                fast, slow, signal,
+                report.totalReturn(), report.maxDrawdown(), report.winRate(),
+                report.profitFactor(), report.totalTrades());
     }
 
     /**
