@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, Table, Tag, Switch, Space, Typography, message, Drawer, Descriptions, Popconfirm, Empty, Badge } from 'antd';
+import { Card, Table, Tag, Switch, Space, Typography, Drawer, Descriptions, Popconfirm, Empty, Badge } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import {
@@ -9,6 +9,7 @@ import {
   disableStrategy,
   fetchStrategySignals,
 } from '../api/admin';
+import { notify } from '../feedback/notify';
 import type { SignalEvent } from '../types';
 
 const SIGNAL_TYPE_COLORS: Record<string, string> = {
@@ -43,21 +44,21 @@ export default function Strategies() {
   const enableMutation = useMutation({
     mutationFn: enableStrategy,
     onSuccess: () => {
-      message.success('Strategy enabled');
+      notify.success('Strategy enabled');
       queryClient.invalidateQueries({ queryKey: ['strategy-status'] });
       queryClient.invalidateQueries({ queryKey: ['overview'] });
     },
-    onError: () => message.error('Failed to enable strategy'),
+    onError: () => notify.error('Failed to enable strategy'),
   });
 
   const disableMutation = useMutation({
     mutationFn: disableStrategy,
     onSuccess: () => {
-      message.success('Strategy disabled');
+      notify.success('Strategy disabled');
       queryClient.invalidateQueries({ queryKey: ['strategy-status'] });
       queryClient.invalidateQueries({ queryKey: ['overview'] });
     },
-    onError: () => message.error('Failed to disable strategy'),
+    onError: () => notify.error('Failed to disable strategy'),
   });
 
   const statusMap = new Map(
