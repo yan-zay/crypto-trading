@@ -1,0 +1,19 @@
+package com.tj.crypto.autonomy.capital;
+
+/** Fail-closed outcome for capital-envelope resolution. */
+public enum CapitalResolutionCode {
+    RESOLVED,
+    ACTIVE_POLICY_UNAVAILABLE,
+    UNTRUSTED_POLICY,
+    POLICY_NOT_CURRENT,
+    PORTFOLIO_ID_MISMATCH,
+    POLICY_ID_MISMATCH,
+    POLICY_VERSION_MISMATCH,
+    POLICY_DIGEST_MISMATCH,
+    ACCOUNT_NOT_ALLOCATED,
+    ACCOUNT_VENUE_MISMATCH,
+    SCOPE_NOT_ALLOCATED,
+    RISK_BUDGET_EXPIRED,
+    VALUATION_UNIT_MISMATCH,
+    CAPITAL_ALLOCATION_EXCEEDED
+}
