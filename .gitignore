@@ -48,9 +48,20 @@ frontend/playwright-report/
 ### Environment / Secrets ###
 *.env
 .env
+.env.*
+!.env.example
 .env.local
 application-local.yml
 application-local.yaml
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.pid
+*.log
+.claude/settings.local.json
+/var/agent-sandbox/
 
 ### Docker ###
 docker-compose.override.yml
