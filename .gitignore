@@ -1,4 +1,6 @@
 target/
+.codex-build/
+.codex-test-tmp/
 hs_err_pid*.log
 replay_pid*.log
 !.mvn/wrapper/maven-wrapper.jar
