@@ -4,6 +4,7 @@ import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.config.StrategyProperties;
+import com.tj.crypto.strategy.lifecycle.StrategyRuntimeReleaseGate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -142,6 +143,20 @@ class StrategyManagerTest {
         manager.disableStrategy("MacdCross");
         assertThat(manager.getActiveStrategies()).hasSize(1);
         assertThat(manager.getActiveStrategies().get(0).name()).isEqualTo("RsiCross");
+    }
+
+    @Test
+    @DisplayName("配置 enabled=true 不能绕过生产 release gate")
+    void enabledConfigurationCannotBypassReleaseGate() {
+        StrategyManager manager = new StrategyManager(List.of(macdStrategy), strategyProperties,
+                Optional.of(StrategyRuntimeReleaseGate.denyAll()));
+
+        assertThat(manager.isStrategyEnabled("MacdCross")).isTrue();
+        assertThat(manager.isStrategyExecutable("MacdCross")).isFalse();
+        assertThat(manager.getActiveStrategies()).isEmpty();
+
+        manager.enableStrategy("MacdCross");
+        assertThat(manager.getActiveStrategies()).isEmpty();
     }
 
     @Test

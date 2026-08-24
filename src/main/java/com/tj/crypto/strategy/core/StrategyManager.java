@@ -1,12 +1,16 @@
 package com.tj.crypto.strategy.core;
 
 import com.tj.crypto.strategy.config.StrategyProperties;
+import com.tj.crypto.strategy.lifecycle.StrategyRuntimeRelease;
+import com.tj.crypto.strategy.lifecycle.StrategyRuntimeReleaseGate;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +30,7 @@ public class StrategyManager {
 
     private final Map<String, Strategy> strategyMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> enabledMap = new ConcurrentHashMap<>();
+    private final StrategyRuntimeReleaseGate runtimeReleaseGate;
 
     /**
      * 构造函数。
@@ -35,6 +40,15 @@ public class StrategyManager {
      * @param strategyProperties 策略配置属性（crypto.strategy.configs）
      */
     public StrategyManager(List<Strategy> strategies, StrategyProperties strategyProperties) {
+        this(strategies, strategyProperties,
+                Optional.of(StrategyRuntimeReleaseGate.configurationOnlyCompatibility()));
+    }
+
+    /** Production/Spring wiring defaults to deny when the lifecycle release gate is absent. */
+    @Autowired
+    public StrategyManager(List<Strategy> strategies, StrategyProperties strategyProperties,
+                           Optional<StrategyRuntimeReleaseGate> runtimeReleaseGate) {
+        this.runtimeReleaseGate = runtimeReleaseGate.orElseGet(StrategyRuntimeReleaseGate::denyAll);
         Map<String, StrategyProperties.StrategyConfig> configs = strategyProperties.getConfigs();
 
         for (Strategy strategy : strategies) {
@@ -51,7 +65,7 @@ public class StrategyManager {
                 initialEnabled = config.isEnabled();
             }
             enabledMap.put(name, initialEnabled);
-            log.info("Strategy '{}' registered, enabled={}", name, initialEnabled);
+            log.info("Strategy '{}' registered, configuredEnabled={}", name, initialEnabled);
         }
 
         Set<String> missingEnabledStrategies = new LinkedHashSet<>();
@@ -113,10 +127,28 @@ public class StrategyManager {
      * 获取所有活跃（已启用）的策略。
      */
     public List<Strategy> getActiveStrategies() {
-        return strategyMap.entrySet().stream()
-                .filter(e -> enabledMap.getOrDefault(e.getKey(), false))
-                .map(Map.Entry::getValue)
+        return getActiveStrategyReleases().stream()
+                .map(ActiveStrategyRelease::strategy)
                 .toList();
+    }
+
+    /**
+     * Effective runtime truth: configuration enablement and an exact lifecycle-bound release must
+     * both pass. Errors or missing assignments are handled by the release gate as a denial.
+     */
+    public List<ActiveStrategyRelease> getActiveStrategyReleases() {
+        return strategyMap.entrySet().stream()
+                .filter(entry -> enabledMap.getOrDefault(entry.getKey(), false))
+                .map(entry -> runtimeReleaseGate.resolve(entry.getKey())
+                        .map(release -> new ActiveStrategyRelease(entry.getValue(), release))
+                        .orElse(null))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    public boolean isStrategyExecutable(String name) {
+        return enabledMap.getOrDefault(name, false)
+                && runtimeReleaseGate.resolve(name).isPresent();
     }
 
     /**
@@ -134,5 +166,12 @@ public class StrategyManager {
      */
     public Optional<Strategy> getStrategy(String name) {
         return Optional.ofNullable(strategyMap.get(name));
+    }
+
+    public record ActiveStrategyRelease(Strategy strategy, StrategyRuntimeRelease release) {
+        public ActiveStrategyRelease {
+            Objects.requireNonNull(strategy, "strategy");
+            Objects.requireNonNull(release, "release");
+        }
     }
 }

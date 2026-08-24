@@ -1,6 +1,7 @@
 package com.tj.crypto.strategy.core;
 
 import com.tj.crypto.common.domain.Instrument;
+import com.tj.crypto.strategy.lifecycle.StrategyRuntimeRelease;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -24,5 +25,39 @@ public record SignalEvent(
         BigDecimal confidence,
         String reason,
         Map<String, BigDecimal> factorSnapshot,
-        long timestamp
-) {}
+        long timestamp,
+        String releaseAssignmentId,
+        String strategyArtifactSha256,
+        String governanceSubjectSha256
+) {
+    /** Backtest and isolated strategy compatibility; managed runtime enriches before collection. */
+    public SignalEvent(String strategyName, Instrument instrument, SignalType type,
+                       BigDecimal confidence, String reason,
+                       Map<String, BigDecimal> factorSnapshot, long timestamp) {
+        this(strategyName, instrument, type, confidence, reason, factorSnapshot, timestamp,
+                null, null, null);
+    }
+
+    public SignalEvent withRuntimeRelease(StrategyRuntimeRelease release) {
+        return withRuntimeRelease(strategyName, release);
+    }
+
+    /** Bind lineage only when the signal identity matches the strategy whose release was resolved. */
+    public SignalEvent withRuntimeRelease(String expectedStrategyName, StrategyRuntimeRelease release) {
+        if (expectedStrategyName == null || expectedStrategyName.isBlank()
+                || !expectedStrategyName.equals(strategyName)) {
+            throw new IllegalArgumentException("signal strategyName does not match the resolved runtime strategy");
+        }
+        if (release == null || !release.lifecycleBound()) {
+            throw new IllegalArgumentException("a lifecycle-bound runtime release is required");
+        }
+        return new SignalEvent(strategyName, instrument, type, confidence, reason,
+                factorSnapshot, timestamp, release.assignmentId(), release.artifactSha256(),
+                release.governanceSubjectSha256());
+    }
+
+    public boolean hasRuntimeReleaseLineage() {
+        return releaseAssignmentId != null && strategyArtifactSha256 != null
+                && governanceSubjectSha256 != null;
+    }
+}

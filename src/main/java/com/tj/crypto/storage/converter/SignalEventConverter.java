@@ -24,6 +24,9 @@ public final class SignalEventConverter {
     public static SignalEventDO toDO(SignalEvent event) {
         SignalEventDO dobj = new SignalEventDO();
         dobj.setStrategyName(event.strategyName());
+        dobj.setReleaseAssignmentId(event.releaseAssignmentId());
+        dobj.setStrategyArtifactSha256(event.strategyArtifactSha256());
+        dobj.setGovernanceSubjectSha256(event.governanceSubjectSha256());
         dobj.setExchange(event.instrument().exchange().getCode());
         dobj.setMarketType(event.instrument().marketType().name());
         dobj.setSymbol(event.instrument().symbol());

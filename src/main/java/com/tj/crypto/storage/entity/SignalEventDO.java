@@ -20,6 +20,9 @@ public class SignalEventDO extends PhysicsTimeBaseDO {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String strategyName;
+    private String releaseAssignmentId;
+    private String strategyArtifactSha256;
+    private String governanceSubjectSha256;
     private String exchange;
     private String marketType;
     private String symbol;
