@@ -20,4 +20,20 @@ public record FundingRateEvent(
         BigDecimal fundingRate,
         BigDecimal predictedRate,
         long nextFundingTime
-) implements MarketEvent {}
+) implements MarketEvent {
+    public FundingRateEvent {
+        MarketEventValidation.requireIdentity(instrument, metadata);
+        if (fundingRate == null) {
+            throw new IllegalArgumentException("fundingRate is required");
+        }
+        if (predictedRate != null && predictedRate.abs().compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("predictedRate absolute value must not exceed one");
+        }
+        if (fundingRate.abs().compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("fundingRate absolute value must not exceed one");
+        }
+        if (nextFundingTime <= 0) {
+            throw new IllegalArgumentException("nextFundingTime must be positive");
+        }
+    }
+}

@@ -1,0 +1,20 @@
+{
+  "type": "record", "name": "L2OrderBookArchiveV1", "namespace": "com.tj.crypto.marketdata.archive.avro",
+  "fields": [
+    {"name":"row_number","type":"long"}, {"name":"event_key","type":"string"},
+    {"name":"source","type":"string"}, {"name":"exchange","type":"string"},
+    {"name":"market_type","type":"string"}, {"name":"symbol","type":"string"},
+    {"name":"base_asset","type":"string"}, {"name":"quote_asset","type":"string"},
+    {"name":"exchange_timestamp","type":"long"}, {"name":"received_timestamp","type":"long"},
+    {"name":"raw_message_id","type":["null","string"],"default":null},
+    {"name":"book_epoch","type":"string"}, {"name":"first_update_id","type":"long"},
+    {"name":"last_update_id","type":"long"},
+    {"name":"previous_update_id","type":["null","long"],"default":null},
+    {"name":"checksum","type":["null","long"],"default":null}, {"name":"snapshot","type":"boolean"},
+    {"name":"bids","type":{"type":"array","items":{"type":"record","name":"OrderBookLevelV1","fields":[
+      {"name":"price","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+      {"name":"quantity","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}}
+    ]}}},
+    {"name":"asks","type":{"type":"array","items":"com.tj.crypto.marketdata.archive.avro.OrderBookLevelV1"}}
+  ]
+}

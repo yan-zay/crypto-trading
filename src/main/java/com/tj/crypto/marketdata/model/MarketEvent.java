@@ -11,8 +11,9 @@ import com.tj.crypto.common.domain.Instrument;
  * - 所有实现类使用 record，确保不可变性
  * - 编译器可在 switch 表达式中检查所有 case
  */
-public sealed interface MarketEvent
-        permits BarEvent, LiquidationEvent, FundingRateEvent, OpenInterestEvent {
+public sealed interface MarketEvent extends ArchivableMarketData
+        permits BarEvent, LiquidationEvent, FundingRateEvent, OpenInterestEvent,
+        TradeEvent, L2OrderBookEvent, MarkPriceEvent, IndexPriceEvent {
 
     /**
      * 事件关联的交易工具。

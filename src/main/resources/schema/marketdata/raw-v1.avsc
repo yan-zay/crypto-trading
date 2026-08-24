@@ -1,0 +1,12 @@
+{
+  "type": "record", "name": "RawMarketMessageArchiveV1", "namespace": "com.tj.crypto.marketdata.archive.avro",
+  "fields": [
+    {"name":"row_number","type":"long"}, {"name":"event_key","type":"string"},
+    {"name":"source","type":"string"}, {"name":"market_type","type":"string"},
+    {"name":"symbol_scope","type":"string"}, {"name":"exchange_timestamp","type":"long"},
+    {"name":"received_timestamp","type":"long"},
+    {"name":"raw_message_id","type":["null","string"],"default":null},
+    {"name":"channel","type":"string"}, {"name":"content_type","type":"string"},
+    {"name":"payload","type":"bytes"}, {"name":"payload_sha256","type":"string"}
+  ]
+}

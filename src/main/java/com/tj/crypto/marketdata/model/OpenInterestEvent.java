@@ -18,4 +18,14 @@ public record OpenInterestEvent(
         EventMetadata metadata,
         BigDecimal openInterest,
         BigDecimal openInterestUsd
-) implements MarketEvent {}
+) implements MarketEvent {
+    public OpenInterestEvent {
+        MarketEventValidation.requireIdentity(instrument, metadata);
+        if (openInterest == null || openInterest.signum() < 0) {
+            throw new IllegalArgumentException("openInterest must not be negative");
+        }
+        if (openInterestUsd == null || openInterestUsd.signum() < 0) {
+            throw new IllegalArgumentException("openInterestUsd must not be negative");
+        }
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "type": "record", "name": "FundingRateArchiveV1", "namespace": "com.tj.crypto.marketdata.archive.avro",
+  "fields": [
+    {"name":"row_number","type":"long"}, {"name":"event_key","type":"string"},
+    {"name":"source","type":"string"}, {"name":"exchange","type":"string"},
+    {"name":"market_type","type":"string"}, {"name":"symbol","type":"string"},
+    {"name":"base_asset","type":"string"}, {"name":"quote_asset","type":"string"},
+    {"name":"exchange_timestamp","type":"long"}, {"name":"received_timestamp","type":"long"},
+    {"name":"raw_message_id","type":["null","string"],"default":null},
+    {"name":"funding_rate","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"predicted_rate","type":["null",{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}],"default":null},
+    {"name":"next_funding_time","type":"long"}
+  ]
+}
