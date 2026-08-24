@@ -100,6 +100,9 @@ class PaperTradingMySqlIntegrationTest {
     @Test
     void freshMigrationAndPaperOrderFactsReconcileOnMySql8() {
         assertFreshSchemaIsAtLatestMigration();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM admin_user WHERE username IN ('admin','viewer') AND enabled=1",
+                Integer.class)).isZero();
 
         PaperAccountDO account = accountLifecycleService.start(
                 new BigDecimal("10000.00"), "mysql-golden-path", "corr-account-start");
@@ -247,6 +250,12 @@ class MySqlFlywayUpgradeIntegrationTest {
                             + "('live_risk_budget_scope','live_risk_reservation')")) {
                 assertThat(reservationTables.next()).isTrue();
                 assertThat(reservationTables.getInt(1)).isEqualTo(2);
+            }
+            try (ResultSet legacyBootstrapUsers = statement.executeQuery(
+                    "SELECT COUNT(*) FROM admin_user "
+                            + "WHERE username IN ('admin','viewer') AND enabled=1")) {
+                assertThat(legacyBootstrapUsers.next()).isTrue();
+                assertThat(legacyBootstrapUsers.getInt(1)).isZero();
             }
         }
     }
