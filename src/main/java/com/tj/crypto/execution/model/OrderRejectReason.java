@@ -19,6 +19,7 @@ public enum OrderRejectReason {
     COOLDOWN("cooldown", "冷却期暂停交易"),
     EXPOSURE_LIMIT("exposure_limit", "暴露限制"),
     INVALID_ORDER("invalid_order", "订单不满足交易所规则"),
+    AUTHORIZATION_REVOKED("authorization_revoked", "发送前授权失效"),
     ;
 
     private final String code;

@@ -85,7 +85,8 @@ class LiveRiskReservationServiceTest {
 
         // The OMS INSERT deliberately occurs inside the same transaction before the check;
         // the runtime exception makes Spring roll both facts back together.
-        verify(persistenceService).recordInitialLiveCommand(order(false), created(), metadata());
+        verify(persistenceService).recordInitialLiveCommand(
+                order(false), created(), metadata(), null);
     }
 
     @Test

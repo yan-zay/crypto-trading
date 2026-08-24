@@ -44,6 +44,7 @@ public class LiveOrderService {
     private final LiveRiskReservationService riskReservationService;
     private ExecutionWriterLeaseService writerLeaseService;
     private LiveOrderRecoveryGate recoveryGate;
+    private LiveGovernedOrderReservationService governedReservationService;
 
     /** Required in the Spring runtime; intentionally absent from direct unit-test construction. */
     @Autowired
@@ -57,8 +58,21 @@ public class LiveOrderService {
         this.recoveryGate = recoveryGate;
     }
 
+    /** Required in Spring; direct read/cancel tests do not need to mint opening-risk permits. */
+    @Autowired
+    void setGovernedReservationService(
+            LiveGovernedOrderReservationService governedReservationService) {
+        this.governedReservationService = governedReservationService;
+    }
+
     public synchronized Order place(LiveOrderRequest request) {
-        requirePlaceAuthorization(request.exchange());
+        return place(request, null);
+    }
+
+    public synchronized Order place(LiveOrderRequest request, String authenticatedOperator) {
+        writeGuard.requireOrderPreflight(request.exchange());
+        writeGuard.requireTrustedMarketValuation(request);
+        requireWriterLease();
         long now = System.currentTimeMillis();
         InstrumentMetadata metadata = metadataService.require(request.exchange(), request.marketType(),
                 request.symbol(), now);
@@ -66,20 +80,23 @@ public class LiveOrderService {
         BigDecimal reference = metadata.alignPrice(request.orderType() == com.tj.crypto.execution.model.OrderType.LIMIT
                 ? request.limitPrice() : request.referencePrice());
         metadata.validate(reference, quantity, request.leverage());
+        requireSupportedContractValuation(metadata, request.reduceOnly());
         String clientOrderId = request.clientOrderId() == null || request.clientOrderId().isBlank()
                 ? compactId() : request.clientOrderId().trim();
-        OmsOrderDO duplicate = orderMapper.selectByClientOrderId(clientOrderId);
-        if (duplicate != null) return verifyReplay(request, quantity, reference, duplicate);
-
         PrivateVenueGateway gateway = gatewayRegistry.require(request.exchange());
         Instrument instrument = metadata.instrument();
         VenueOrderCommand command = new VenueOrderCommand(request.accountId(), clientOrderId,
-                instrument, request.side(), request.positionSide(), request.orderType(), quantity,
-                request.orderType() == com.tj.crypto.execution.model.OrderType.LIMIT ? reference : null,
+                request.strategyId(), instrument, request.side(), request.positionSide(), request.orderType(), quantity,
+                reference,
                 request.reduceOnly(), request.leverage(), request.marginMode());
+        OmsOrderDO duplicate = orderMapper.selectByClientOrderId(clientOrderId);
+        if (duplicate != null) return verifyReplay(request, quantity, reference, command, duplicate);
+
         LiveRiskReservationBudget riskBudget = riskService.validateAndCreateBudget(
                 command, reference, gateway.account(instrument),
                 request.reduceOnly() ? List.of() : pendingExposures(request));
+        requireWriterLease();
+        if (riskBudget.riskIncreasing()) requireRecoveryReady();
 
         Order order = new Order(UUID.randomUUID().toString(), clientOrderId, instrument,
                 request.side() == com.tj.crypto.common.domain.TradeSide.BUY ? OrderSide.LONG : OrderSide.SHORT,
@@ -87,25 +104,34 @@ public class LiveOrderService {
                 OrderStatus.CREATED, OrderRejectReason.NONE, now, 0, 0, 0,
                 request.strategyId(), request.side(), request.positionSide(), request.reduceOnly());
         OmsFillMetadata journalMetadata = metadata(request, reference);
+        LiveOrderAuthorization authorization;
         try {
             OrderEvent created = OrderEvent.created(order.orderId(), now);
-            riskReservationService.reserveAndRecord(
-                    order, created, journalMetadata, riskBudget);
+            if (governedReservationService == null) {
+                throw new LiveAuthorizationException(
+                        "Governed OMS/risk reservation service is not configured");
+            }
+            authorization = governedReservationService.authorizeReserveAndRecord(
+                    order, created, journalMetadata, riskBudget, command,
+                    request.approval(), authenticatedOperator);
         } catch (DuplicateKeyException duplicateClientOrderId) {
             OmsOrderDO claimed = orderMapper.selectByClientOrderId(clientOrderId);
             if (claimed == null) throw duplicateClientOrderId;
-            return verifyReplay(request, quantity, reference, claimed);
+            return verifyReplay(request, quantity, reference, command, claimed);
+        }
+        try {
+            if (riskBudget.riskIncreasing()) requireRecoveryReady();
+            writeGuard.revalidateOrder(command, authorization);
+            requireWriterLease();
+        } catch (LiveAuthorizationException deniedBeforeDispatch) {
+            return rejectBeforeDispatch(order, journalMetadata);
         }
         OrderEvent submitted = OrderEvent.submitted(order.orderId(), now);
         order = OrderStateMachine.transition(order, submitted);
         persistenceService.recordVenue(order, submitted, null, journalMetadata, "LIVE");
 
         try {
-            // Close the authorization/lease TOCTOU window as far as the local process can. The
-            // venue clientOrderId remains the external idempotency key; a database fencing token
-            // cannot be enforced by an exchange which does not accept it.
-            requirePlaceAuthorization(request.exchange());
-            VenueOrderSnapshot response = gateway.place(command);
+            VenueOrderSnapshot response = gateway.place(command, authorization);
             persistenceService.attachVenue(order.orderId(), response.venueOrderId(), response.rawStatus());
             if (response.state() == VenueOrderState.ACCEPTED) {
                 OrderEvent acknowledged = OrderEvent.acknowledged(order.orderId(), response.eventTimeMs());
@@ -117,8 +143,10 @@ public class LiveOrderService {
                 order = latest == null ? order : OmsOrderDomainConverter.toDomain(latest);
             }
             return order;
+        } catch (LiveAuthorizationException deniedAtGatewayBoundary) {
+            return rejectBeforeDispatch(order, journalMetadata);
         } catch (VenueApiException e) {
-            if (e.httpStatus() == 0 || e.httpStatus() >= 500) {
+            if (!e.definitivelyRejectsOrder()) {
                 persistenceService.markUnknown(order.orderId(), e.venueCode(), System.currentTimeMillis());
                 return OmsOrderDomainConverter.toDomain(orderMapper.selectById(order.orderId()));
             }
@@ -143,16 +171,18 @@ public class LiveOrderService {
         }
         writeGuard.requireCancelEnabled(order.instrument().exchange());
         requireWriterLease();
+        VenueCancelCommand reference = reference(order, stored);
+        LiveOrderAuthorization authorization = writeGuard.authorizeCancel(reference);
         if (firstRequest || order.status() == OrderStatus.UNKNOWN) {
             OrderEvent requested = OrderEvent.cancelRequested(orderId, System.currentTimeMillis());
             order = OrderStateMachine.transition(order, requested);
             persistenceService.recordVenue(order, requested, null, metadata(stored), "LIVE");
         }
         try {
-            writeGuard.requireCancelEnabled(order.instrument().exchange());
+            writeGuard.revalidateCancel(reference, authorization);
             requireWriterLease();
             VenueOrderSnapshot response = gatewayRegistry.require(order.instrument().exchange())
-                    .cancel(reference(order, stored));
+                    .cancel(reference, authorization);
             persistenceService.attachVenue(orderId, response.venueOrderId(), response.rawStatus());
             if (response.state() == VenueOrderState.CANCELLED) {
                 OrderEvent cancelled = OrderEvent.cancelled(orderId, response.eventTimeMs());
@@ -225,17 +255,24 @@ public class LiveOrderService {
     }
 
     private Order verifyReplay(LiveOrderRequest request, BigDecimal quantity,
-                               BigDecimal reference, OmsOrderDO existing) {
+                               BigDecimal reference, VenueOrderCommand command,
+                               OmsOrderDO existing) {
         boolean same = "LIVE".equals(existing.getOrderSource())
+                && request.accountId().equals(existing.getAccountId())
+                && request.strategyId().equals(existing.getStrategyId())
                 && request.exchange().name().equalsIgnoreCase(existing.getExchange())
                 && request.marketType().name().equalsIgnoreCase(existing.getMarketType())
                 && request.symbol().replace("-", "").equalsIgnoreCase(existing.getSymbol())
                 && request.side().name().equals(existing.getTradeSide())
                 && request.orderType().name().equals(existing.getOrderType())
+                && request.positionSide().name().equals(existing.getPositionSide())
                 && quantity.compareTo(existing.getQuantity()) == 0
                 && reference.compareTo(existing.getPrice()) == 0
                 && request.reduceOnly() == Boolean.TRUE.equals(existing.getReduceOnly())
-                && request.leverage() == (existing.getLeverage() == null ? 1 : existing.getLeverage());
+                && request.leverage() == (existing.getLeverage() == null ? 1 : existing.getLeverage())
+                && request.marginMode().equalsIgnoreCase(existing.getMarginMode())
+                && LiveOrderCommandHasher.hash(command).equals(existing.getCommandSha256())
+                && completeAuthorizationLineage(existing);
         if (!same) throw new IllegalArgumentException("clientOrderId was used for a different live order");
         return OmsOrderDomainConverter.toDomain(existing);
     }
@@ -244,16 +281,68 @@ public class LiveOrderService {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 
-    private void requireWriterLease() {
-        // Spring requires the setter dependency. Directly-constructed unit tests have no external
-        // venue side effects because all gateways are fakes/mocks.
-        if (writerLeaseService != null) writerLeaseService.requireOwnership();
+    /**
+     * The current live exposure snapshot stores venue quantities without a versioned contract
+     * specification. Until multiplier-aware position and pending-order facts are wired end to end,
+     * accepting a non-unit derivative multiplier would under/overstate every hard risk budget.
+     */
+    static void requireSupportedContractValuation(InstrumentMetadata metadata, boolean reduceOnly) {
+        if (metadata == null || metadata.contractMultiplier() == null
+                || metadata.contractMultiplier().signum() <= 0) {
+            throw new LiveAuthorizationException(
+                    "A positive, trusted contract multiplier is required for live valuation");
+        }
+        // Unsupported valuation must never open risk, but an exact venue-contract reduction must
+        // remain available. VenuePreTradeRiskService still proves side and quantity against the
+        // current position before this command can receive a reduction permit.
+        if (reduceOnly) return;
+        if (metadata.contractMultiplier().compareTo(BigDecimal.ONE) != 0) {
+            throw new LiveAuthorizationException(
+                    "Non-unit contract multipliers are blocked until multiplier-aware live risk facts are wired");
+        }
+        if (metadata.marketType() == com.tj.crypto.common.domain.MarketType.PERPETUAL
+                && metadata.exchange() == com.tj.crypto.common.domain.Exchange.OKX) {
+            throw new LiveAuthorizationException(
+                    "OKX perpetual opening risk is blocked until ctVal/ctMult/ctType valuation is wired");
+        }
+        if (metadata.marketType() == com.tj.crypto.common.domain.MarketType.PERPETUAL
+                && (metadata.settleAsset() == null
+                || !metadata.settleAsset().equalsIgnoreCase(metadata.quoteAsset()))) {
+            throw new LiveAuthorizationException(
+                    "Only explicitly linear quote-settled perpetual valuation is supported");
+        }
     }
 
-    private void requirePlaceAuthorization(com.tj.crypto.common.domain.Exchange exchange) {
-        if (recoveryGate != null) recoveryGate.requireReadyForOpeningRisk();
-        writeGuard.requireWriteEnabled(exchange);
-        requireWriterLease();
+    private void requireWriterLease() {
+        if (writerLeaseService == null) {
+            throw new LiveAuthorizationException("Execution writer lease is not configured");
+        }
+        writerLeaseService.requireOwnership();
+    }
+
+    private void requireRecoveryReady() {
+        if (recoveryGate == null) {
+            throw new LiveAuthorizationException("Live order recovery gate is not configured");
+        }
+        recoveryGate.requireReadyForOpeningRisk();
+    }
+
+    private Order rejectBeforeDispatch(Order order, OmsFillMetadata metadata) {
+        OrderEvent rejected = OrderEvent.rejected(order.orderId(), System.currentTimeMillis(),
+                OrderRejectReason.AUTHORIZATION_REVOKED);
+        Order result = OrderStateMachine.transition(order, rejected);
+        persistenceService.recordVenue(result, rejected, null, metadata, "LIVE");
+        return result;
+    }
+
+    private boolean completeAuthorizationLineage(OmsOrderDO existing) {
+        if (existing.getAuthorizationKind() == null || existing.getCommandSha256() == null) {
+            return false;
+        }
+        if (!"LIVE_RISK_INCREASE".equals(existing.getAuthorizationKind())) return true;
+        return existing.getGovernanceDecisionId() != null
+                && existing.getGovernanceSubjectSha256() != null
+                && existing.getStrategyArtifactSha256() != null;
     }
 
     private List<VenuePendingExposure> pendingExposures(LiveOrderRequest request) {

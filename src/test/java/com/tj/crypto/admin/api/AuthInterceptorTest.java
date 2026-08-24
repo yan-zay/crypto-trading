@@ -250,6 +250,27 @@ class AuthInterceptorTest {
         }
 
         @Test
+        @DisplayName("私有账户查询同样要求隔离的 LIVE_TRADER 角色")
+        void privateAccountReadIsNotAViewerEndpoint() throws Exception {
+            String viewer = loginAs("viewer", "password", "VIEWER");
+            request.setRequestURI("/api/admin/live-trading/accounts/BINANCE");
+            request.setMethod("GET");
+            request.addHeader("Authorization", "Bearer " + viewer);
+
+            assertThat(interceptor.preHandle(request, response, null)).isFalse();
+            assertThat(response.getStatus()).isEqualTo(403);
+
+            String live = loginAs("live-read", "password", "LIVE_TRADER");
+            MockHttpServletRequest liveRequest = new MockHttpServletRequest();
+            liveRequest.setRequestURI("/api/admin/live-trading/accounts/BINANCE");
+            liveRequest.setMethod("GET");
+            liveRequest.addHeader("Authorization", "Bearer " + live);
+
+            assertThat(interceptor.preHandle(
+                    liveRequest, new MockHttpServletResponse(), null)).isTrue();
+        }
+
+        @Test
         @DisplayName("LIVE_TRADER 不能解除熔断或发布配置")
         void liveTraderCannotEscalateIntoRiskOrOperationsRoles() throws Exception {
             String token = loginAs("live", "password", "LIVE_TRADER");

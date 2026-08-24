@@ -59,8 +59,9 @@ public class LiveTradingAdminController {
                 source.strategyId(), source.exchange(), source.marketType(), source.symbol(), source.side(),
                 source.positionSide(), source.orderType(), source.quantity(), source.limitPrice(),
                 source.referencePrice(), source.leverage(), source.reduceOnly(), source.marginMode(),
-                source.correlationId() == null ? correlationId(request) : source.correlationId());
-        Object result = liveOrderService.place(command);
+                source.correlationId() == null ? correlationId(request) : source.correlationId(),
+                source.approval());
+        Object result = liveOrderService.place(command, operator(request));
         auditService.logOperation(operator(request), "PLACE_LIVE_ORDER",
                 "exchange=" + source.exchange() + ",clientOrderId=" + command.clientOrderId());
         return result;

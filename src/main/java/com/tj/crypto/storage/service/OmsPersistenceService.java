@@ -15,6 +15,7 @@ import com.tj.crypto.storage.mapper.OmsOrderEventMapper;
 import com.tj.crypto.storage.mapper.OmsOrderMapper;
 import com.tj.crypto.storage.mapper.TradeRecordMapper;
 import com.tj.crypto.trading.venue.riskreservation.LiveRiskReservationMapper;
+import com.tj.crypto.trading.venue.LiveOrderGovernanceBinding;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,8 +61,23 @@ public class OmsPersistenceService implements ExecutionJournal {
     @Transactional
     public void recordInitialLiveCommand(Order order, OrderEvent event,
                                          OmsFillMetadata metadata) {
+        recordInitialLiveCommand(order, event, metadata, null);
+    }
+
+    @Transactional
+    public void recordInitialLiveCommand(Order order, OrderEvent event,
+                                         OmsFillMetadata metadata,
+                                         LiveOrderGovernanceBinding governanceBinding) {
         OmsFillMetadata safeMetadata = metadata == null ? OmsFillMetadata.empty() : metadata;
-        orderMapper.insert(toOrderDO(order, event, safeMetadata, "LIVE"));
+        OmsOrderDO orderDO = toOrderDO(order, event, safeMetadata, "LIVE");
+        if (governanceBinding != null) {
+            orderDO.setCommandSha256(governanceBinding.commandSha256());
+            orderDO.setAuthorizationKind(governanceBinding.authorizationKind());
+            orderDO.setGovernanceDecisionId(governanceBinding.governanceDecisionId());
+            orderDO.setGovernanceSubjectSha256(governanceBinding.governanceSubjectSha256());
+            orderDO.setStrategyArtifactSha256(governanceBinding.strategyArtifactSha256());
+        }
+        orderMapper.insert(orderDO);
         eventMapper.insert(toEventDO(order, event));
     }
 

@@ -54,9 +54,16 @@ public class VenuePrivateEventProcessor {
         }
 
         if (cumulative.compareTo(order.filledQuantity()) > 0) {
+            BigDecimal fillPrice;
+            try {
+                fillPrice = requireVenueFillPrice(update);
+            } catch (IllegalArgumentException missingPrice) {
+                persistenceService.markUnknown(order.orderId(), "MISSING_VENUE_FILL_PRICE",
+                        update.eventTimeMs());
+                return;
+            }
             order = ensureAcknowledged(order, stored, update.eventTimeMs());
             BigDecimal delta = cumulative.subtract(order.filledQuantity());
-            BigDecimal fillPrice = effectiveFillPrice(update, order);
             OrderEvent fill = cumulative.compareTo(order.quantity()) == 0
                     ? OrderEvent.filled(order.orderId(), update.eventTimeMs(), fillPrice, delta)
                     : OrderEvent.partiallyFilled(order.orderId(), update.eventTimeMs(), fillPrice, delta);
@@ -179,11 +186,10 @@ public class VenuePrivateEventProcessor {
         return order;
     }
 
-    private BigDecimal effectiveFillPrice(VenueOrderUpdate update, Order order) {
+    static BigDecimal requireVenueFillPrice(VenueOrderUpdate update) {
         if (update.lastFillPrice() != null && update.lastFillPrice().signum() > 0) return update.lastFillPrice();
         if (update.averageFillPrice() != null && update.averageFillPrice().signum() > 0) return update.averageFillPrice();
-        if (order.price() != null && order.price().signum() > 0) return order.price();
-        throw new IllegalArgumentException("Venue fill has no usable price");
+        throw new IllegalArgumentException("Venue fill has no authoritative fill price");
     }
 
     private OmsFillMetadata metadata(OmsOrderDO order, VenueOrderUpdate update) {

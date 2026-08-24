@@ -136,6 +136,8 @@ crypto:
     operating-mode: ${TRADING_OPERATING_MODE:RESEARCH_ONLY}
     target-jurisdiction: ${TRADING_TARGET_JURISDICTION:}
     legal-approval-reference: ${TRADING_LEGAL_APPROVAL_REFERENCE:}
+    governance-environment: ${TRADING_GOVERNANCE_ENVIRONMENT:}
+    governance-authorization-ttl-ms: ${LIVE_GOVERNANCE_AUTHORIZATION_TTL_MS:5000}
     live-write-enabled: ${LIVE_TRADING_WRITE_ENABLED:false}
     user-streams-enabled: ${PRIVATE_USER_STREAMS_ENABLED:false}
     receive-window-ms: ${PRIVATE_API_RECEIVE_WINDOW_MS:5000}
@@ -146,6 +148,8 @@ crypto:
     binance:
       enabled: ${BINANCE_PRIVATE_ENABLED:false}
       write-enabled: ${BINANCE_WRITE_ENABLED:false}
+      account-id: ${BINANCE_PRIVATE_ACCOUNT_ID:}
+      key-reference: ${BINANCE_KEY_REFERENCE:}
       api-key: ${BINANCE_API_KEY:}
       secret-key: ${BINANCE_SECRET_KEY:}
       spot-rest-base-url: ${BINANCE_SPOT_REST_URL:https://api.binance.com}
@@ -157,6 +161,8 @@ crypto:
     okx:
       enabled: ${OKX_PRIVATE_ENABLED:false}
       write-enabled: ${OKX_WRITE_ENABLED:false}
+      account-id: ${OKX_PRIVATE_ACCOUNT_ID:}
+      key-reference: ${OKX_KEY_REFERENCE:}
       api-key: ${OKX_API_KEY:}
       secret-key: ${OKX_SECRET_KEY:}
       passphrase: ${OKX_PASSPHRASE:}

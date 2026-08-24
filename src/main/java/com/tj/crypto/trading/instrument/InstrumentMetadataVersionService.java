@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 /** Applies source observations as slowly changing dimension type-2 records. */
 @Service
@@ -55,6 +56,9 @@ public class InstrumentMetadataVersionService {
 
     private boolean equivalent(InstrumentMetadataDO current, InstrumentRuleSnapshot next) {
         return current.getVenueSymbol().equals(next.venueSymbol())
+                && Objects.equals(current.getBaseAsset(), next.baseAsset())
+                && Objects.equals(current.getQuoteAsset(), next.quoteAsset())
+                && Objects.equals(current.getSettleAsset(), next.settleAsset())
                 && current.getInstrumentStatus().equals(next.status())
                 && equal(current.getTickSize(), next.tickSize())
                 && equal(current.getStepSize(), next.stepSize())

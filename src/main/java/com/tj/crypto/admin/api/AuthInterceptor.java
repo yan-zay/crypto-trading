@@ -97,6 +97,12 @@ public class AuthInterceptor implements HandlerInterceptor {
             return Role.ADMIN;
         }
 
+        // Private account/stream reads trigger signed venue requests and expose sensitive account
+        // truth. They are not ordinary VIEWER diagnostics.
+        if (path.startsWith("/api/admin/live-trading/")) {
+            return Role.LIVE_TRADER;
+        }
+
         if (isReadOnlyMethod) {
             return Role.VIEWER;
         }
@@ -104,10 +110,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 风控写操作需要 RISK_MANAGER
         if (path.contains("/risk/kill-switch")) {
             return Role.RISK_MANAGER;
-        }
-
-        if (path.startsWith("/api/admin/live-trading/")) {
-            return Role.LIVE_TRADER;
         }
 
         // 策略启停、配置发布、回填等需要 OPERATOR

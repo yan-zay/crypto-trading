@@ -211,13 +211,19 @@ class VenuePreTradeRiskServiceTest {
     }
 
     @Test
-    void haltRejectsEvenReduceOnlyAccordingToExistingKillSwitchContract() {
+    void haltRejectsOpeningRiskButAllowsOnlyAValidCoveredReduction() {
         killSwitch.activate(KillSwitch.Mode.HALT);
         VenuePosition existing = position("BTCUSDT", "LONG", "0.02", "20000");
 
-        assertThatThrownBy(() -> service.validate(perpetual(new BigDecimal("0.01"),
-                        TradeSide.SELL, OrderSide.LONG, true, 10), PRICE, account(List.of(existing))))
+        assertThatThrownBy(() -> service.validate(perpetual(new BigDecimal("0.001"),
+                        TradeSide.BUY, OrderSide.LONG, false, 10), PRICE, account(List.of(existing))))
                 .hasMessageContaining("HALT");
+        assertThatCode(() -> service.validate(perpetual(new BigDecimal("0.01"),
+                        TradeSide.SELL, OrderSide.LONG, true, 10), PRICE, account(List.of(existing))))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> service.validate(perpetual(new BigDecimal("0.01"),
+                        TradeSide.BUY, OrderSide.LONG, true, 10), PRICE, account(List.of(existing))))
+                .hasMessageContaining("does not reduce");
     }
 
     @Test

@@ -24,6 +24,11 @@ public class OmsOrderDO {
     private String marginMode;
     private Long stateVersion;
     private Long lastEventAtMs;
+    private String commandSha256;
+    private String authorizationKind;
+    private String governanceDecisionId;
+    private String governanceSubjectSha256;
+    private String strategyArtifactSha256;
     private String strategyId;
     private String exchange;
     private String marketType;

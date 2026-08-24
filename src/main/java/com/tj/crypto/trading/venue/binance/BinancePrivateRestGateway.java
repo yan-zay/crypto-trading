@@ -6,6 +6,7 @@ import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.trading.venue.LiveTradingWriteGuard;
+import com.tj.crypto.trading.venue.LiveOrderAuthorization;
 import com.tj.crypto.trading.venue.PrivateTradingProperties;
 import com.tj.crypto.trading.venue.PrivateVenueGateway;
 import com.tj.crypto.trading.venue.VenueAccountSnapshot;
@@ -69,8 +70,9 @@ public class BinancePrivateRestGateway extends VenueHttpSupport implements Priva
     }
 
     @Override
-    public VenueOrderSnapshot place(VenueOrderCommand command) {
-        writeGuard.requireWriteEnabled(exchange());
+    public VenueOrderSnapshot place(VenueOrderCommand command,
+                                    LiveOrderAuthorization authorization) {
+        writeGuard.consumeOrder(command, authorization);
         requireConfigured();
         Map<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("symbol", command.instrument().symbol());
@@ -95,8 +97,9 @@ public class BinancePrivateRestGateway extends VenueHttpSupport implements Priva
     }
 
     @Override
-    public VenueOrderSnapshot cancel(VenueCancelCommand command) {
-        writeGuard.requireCancelEnabled(exchange());
+    public VenueOrderSnapshot cancel(VenueCancelCommand command,
+                                     LiveOrderAuthorization authorization) {
+        writeGuard.consumeCancel(command, authorization);
         requireConfigured();
         Map<String, Object> parameters = orderReference(command);
         JsonNode json = signed("DELETE", path(command.instrument(), "/api/v3/order", "/fapi/v1/order"),

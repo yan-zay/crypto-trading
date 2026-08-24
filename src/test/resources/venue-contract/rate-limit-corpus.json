@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "binance-testnet-rate-limit-v1",
+  "requests": [
+    {"sequence": 1, "atMs": 0, "httpStatus": 200, "venueCode": "0", "retryAfterMs": 0},
+    {"sequence": 2, "atMs": 10, "httpStatus": 200, "venueCode": "0", "retryAfterMs": 0},
+    {"sequence": 3, "atMs": 20, "httpStatus": 429, "venueCode": "-1003", "retryAfterMs": 1000},
+    {"sequence": 4, "atMs": 1020, "httpStatus": 200, "venueCode": "0", "retryAfterMs": 0}
+  ],
+  "expected": {
+    "rateLimitObserved": true,
+    "retryAfterHonored": true,
+    "boundedBackoff": true,
+    "requestBudgetEnforced": true,
+    "maxRetryCount": 1
+  }
+}

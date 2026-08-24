@@ -7,6 +7,7 @@ import com.tj.crypto.storage.mapper.OmsOrderMapper;
 import com.tj.crypto.storage.service.OmsPersistenceService;
 import com.tj.crypto.trading.instrument.InstrumentMetadataService;
 import com.tj.crypto.trading.venue.riskreservation.LiveRiskReservationService;
+import com.tj.crypto.trading.venue.fencing.ExecutionWriterLeaseService;
 import com.tj.crypto.trading.venue.stream.VenuePrivateEventProcessor;
 import org.junit.jupiter.api.Test;
 
@@ -47,8 +48,8 @@ class LiveOrderReadOnlyReconciliationTest {
 
         assertThat(service.reconcile("order-1").status()).isEqualTo(OrderStatus.UNKNOWN);
         verify(gateway).query(any());
-        verify(gateway, never()).place(any());
-        verify(gateway, never()).cancel(any());
+        verify(gateway, never()).place(any(), any());
+        verify(gateway, never()).cancel(any(), any());
     }
 
     @Test
@@ -72,8 +73,8 @@ class LiveOrderReadOnlyReconciliationTest {
 
         assertThat(service.reconcile("order-1").status()).isEqualTo(OrderStatus.FILLED);
         verify(gateway, never()).query(any());
-        verify(gateway, never()).place(any());
-        verify(gateway, never()).cancel(any());
+        verify(gateway, never()).place(any(), any());
+        verify(gateway, never()).cancel(any(), any());
     }
 
     @Test
@@ -87,7 +88,7 @@ class LiveOrderReadOnlyReconciliationTest {
         properties.getBinance().setWriteEnabled(true);
         PrivateVenueGateway gateway = mock(PrivateVenueGateway.class);
         when(gateway.exchange()).thenReturn(Exchange.BINANCE);
-        when(gateway.cancel(any())).thenReturn(new VenueOrderSnapshot(
+        when(gateway.cancel(any(), any())).thenReturn(new VenueOrderSnapshot(
                 "venue-1", "client-1", "CANCELED", VenueOrderState.CANCELLED,
                 BigDecimal.ONE, BigDecimal.ZERO, null, 100L, true));
         OmsOrderMapper mapper = mock(OmsOrderMapper.class);
@@ -102,9 +103,10 @@ class LiveOrderReadOnlyReconciliationTest {
                 mock(InstrumentMetadataService.class), mock(VenuePreTradeRiskService.class),
                 mapper, persistence, mock(VenuePrivateEventProcessor.class),
                 mock(LiveRiskReservationService.class));
+        service.setWriterLeaseService(mock(ExecutionWriterLeaseService.class));
 
         assertThat(service.cancel("order-1").status()).isEqualTo(OrderStatus.CANCELLED);
-        verify(gateway).cancel(any());
+        verify(gateway).cancel(any(), any());
         verify(persistence, times(2)).recordVenue(any(), any(), any(), any(),
                 org.mockito.ArgumentMatchers.eq("LIVE"));
     }

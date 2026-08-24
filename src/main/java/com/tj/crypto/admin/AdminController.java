@@ -375,6 +375,17 @@ public class AdminController {
             @RequestParam(defaultValue = "HALT") KillSwitch.Mode mode,
             HttpServletRequest request) {
         String operator = getOperator(request);
+        KillSwitch.Mode current = killSwitch.getMode();
+        if (!isTighteningTransition(current, mode)) {
+            auditService.logOperation(operator, "KILL_SWITCH_RELAXATION_REJECTED",
+                    "current=" + current + ",requested=" + mode);
+            return ResponseEntity.status(409).body(Map.of(
+                    "success", false,
+                    "active", killSwitch.isActive(),
+                    "mode", current.name(),
+                    "reason", "Kill-switch relaxation requires the durable dual-control recovery workflow"
+            ));
+        }
         killSwitch.activate(mode, "ADMIN_API_ACTIVATION", operator);
         auditService.logOperation(operator, "KILL_SWITCH_ACTIVATE", "mode=" + mode);
         return ResponseEntity.ok(Map.of(
@@ -390,13 +401,27 @@ public class AdminController {
     @PostMapping("/risk/kill-switch/deactivate")
     public ResponseEntity<Map<String, Object>> deactivateKillSwitch(HttpServletRequest request) {
         String operator = getOperator(request);
-        killSwitch.deactivate("ADMIN_API_DEACTIVATION", operator);
-        auditService.logOperation(operator, "KILL_SWITCH_DEACTIVATE", "");
-        return ResponseEntity.ok(Map.of(
-                "success", true,
-                "active", false,
-                "mode", "NORMAL"
+        auditService.logOperation(operator, "KILL_SWITCH_RELAXATION_REJECTED",
+                "current=" + killSwitch.getMode() + ",requested=NORMAL");
+        return ResponseEntity.status(409).body(Map.of(
+                "success", false,
+                "active", killSwitch.isActive(),
+                "mode", killSwitch.getMode().name(),
+                "reason", "Admin deactivation is disabled until durable dual-control recovery is wired"
         ));
+    }
+
+    static boolean isTighteningTransition(KillSwitch.Mode current, KillSwitch.Mode requested) {
+        if (current == null || requested == null) return false;
+        return killSwitchSeverity(requested) >= killSwitchSeverity(current);
+    }
+
+    private static int killSwitchSeverity(KillSwitch.Mode mode) {
+        return switch (mode) {
+            case NORMAL -> 0;
+            case CLOSE_ONLY -> 1;
+            case HALT -> 2;
+        };
     }
 
     // ========== 配置版本管理端点 ==========

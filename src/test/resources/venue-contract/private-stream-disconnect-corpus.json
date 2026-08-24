@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "okx-demo-private-stream-disconnect-v1",
+  "frames": [
+    {"sequence": 1, "kind": "CONNECT", "eventId": "session-1", "eventTimeMs": 1000, "arrivalTimeMs": 1000},
+    {"sequence": 2, "kind": "ORDER", "eventId": "order-1:new", "eventTimeMs": 1010, "arrivalTimeMs": 1011},
+    {"sequence": 3, "kind": "ORDER", "eventId": "order-1:new", "eventTimeMs": 1010, "arrivalTimeMs": 1012},
+    {"sequence": 4, "kind": "DISCONNECT", "eventId": "session-1", "eventTimeMs": 1020, "arrivalTimeMs": 1020},
+    {"sequence": 5, "kind": "RECONNECT", "eventId": "session-2", "eventTimeMs": 2020, "arrivalTimeMs": 2020},
+    {"sequence": 6, "kind": "BACKFILL", "eventId": "fill-1", "eventTimeMs": 1030, "arrivalTimeMs": 2030},
+    {"sequence": 7, "kind": "ORDER", "eventId": "order-1:filled", "eventTimeMs": 1040, "arrivalTimeMs": 2040}
+  ],
+  "expected": {
+    "disconnectDetected": true,
+    "reconnected": true,
+    "backfillTriggered": true,
+    "duplicateDeduplicated": true,
+    "delayedDetected": true,
+    "eventOrderPreserved": true,
+    "gapFrozenOrBackfilled": true
+  }
+}

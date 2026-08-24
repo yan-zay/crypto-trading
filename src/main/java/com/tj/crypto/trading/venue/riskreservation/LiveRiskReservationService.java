@@ -5,6 +5,7 @@ import com.tj.crypto.execution.model.Order;
 import com.tj.crypto.execution.model.OrderEvent;
 import com.tj.crypto.execution.model.OrderStatus;
 import com.tj.crypto.storage.service.OmsPersistenceService;
+import com.tj.crypto.trading.venue.LiveOrderGovernanceBinding;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,14 @@ public class LiveRiskReservationService {
     public void reserveAndRecord(Order order, OrderEvent createdEvent,
                                  OmsFillMetadata metadata,
                                  LiveRiskReservationBudget budget) {
+        reserveAndRecord(order, createdEvent, metadata, budget, null);
+    }
+
+    @Transactional
+    public void reserveAndRecord(Order order, OrderEvent createdEvent,
+                                 OmsFillMetadata metadata,
+                                 LiveRiskReservationBudget budget,
+                                 LiveOrderGovernanceBinding governanceBinding) {
         validateInputs(order, createdEvent, metadata, budget);
         String accountId = budget.accountId().trim();
         String exchange = budget.exchange().name();
@@ -41,7 +50,8 @@ public class LiveRiskReservationService {
 
         // INSERT first so a duplicate clientOrderId fails before a replay can be counted as a
         // second reservation. Any later budget failure rolls this insert back with the transaction.
-        persistenceService.recordInitialLiveCommand(order, createdEvent, metadata);
+        persistenceService.recordInitialLiveCommand(
+                order, createdEvent, metadata, governanceBinding);
 
         List<LiveRiskReservationDO> blocking = mapper.selectBlockingForUpdate(accountId, exchange);
         if (budget.riskIncreasing()) {

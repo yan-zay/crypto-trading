@@ -28,6 +28,10 @@ public class PrivateTradingProperties {
     private OperatingMode operatingMode = OperatingMode.RESEARCH_ONLY;
     private String targetJurisdiction = "";
     private String legalApprovalReference = "";
+    /** Exact server-side environment label required by a LIVE_CANARY governance subject. */
+    private String governanceEnvironment = "";
+    /** Maximum lifetime of an in-process permit between atomic reservation and venue dispatch. */
+    private long governanceAuthorizationTtlMs = 5_000;
     private boolean liveWriteEnabled;
     private boolean userStreamsEnabled;
     private long receiveWindowMs = 5_000;
@@ -48,6 +52,9 @@ public class PrivateTradingProperties {
 
     @PostConstruct
     void validateStartupPolicy() {
+        if (governanceAuthorizationTtlMs <= 0 || governanceAuthorizationTtlMs > 30_000) {
+            throw new IllegalStateException("Governance authorization TTL must be within 1..30000ms");
+        }
         if (writerLeaseRenewIntervalMs <= 0 || writerLeaseTtlMs < writerLeaseRenewIntervalMs * 2) {
             throw new IllegalStateException("Writer lease TTL must be at least twice its positive renew interval");
         }
@@ -127,6 +134,10 @@ public class PrivateTradingProperties {
     public static class Binance {
         private boolean enabled;
         private boolean writeEnabled;
+        /** Internal account identity which must match every LIVE_CANARY command. */
+        private String accountId = "";
+        /** Opaque KMS/Vault/HSM reference; never raw key material. */
+        private String keyReference = "";
         private String apiKey = "";
         private String secretKey = "";
         private String spotRestBaseUrl = "https://api.binance.com";
@@ -142,6 +153,8 @@ public class PrivateTradingProperties {
     public static class Okx {
         private boolean enabled;
         private boolean writeEnabled;
+        private String accountId = "";
+        private String keyReference = "";
         private String apiKey = "";
         private String secretKey = "";
         private String passphrase = "";

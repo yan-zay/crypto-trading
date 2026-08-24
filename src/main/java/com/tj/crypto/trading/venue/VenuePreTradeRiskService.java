@@ -122,11 +122,9 @@ public class VenuePreTradeRiskService {
 
     private void enforceKillSwitch(VenueOrderCommand command) {
         KillSwitch.Mode mode = killSwitch.getMode();
-        if (mode == KillSwitch.Mode.HALT) {
-            throw new IllegalStateException("Kill switch is HALT");
-        }
-        if (mode == KillSwitch.Mode.CLOSE_ONLY && !command.reduceOnly()) {
-            throw new IllegalStateException("Kill switch is CLOSE_ONLY");
+        if ((mode == KillSwitch.Mode.HALT || mode == KillSwitch.Mode.CLOSE_ONLY)
+                && !command.reduceOnly()) {
+            throw new IllegalStateException("Kill switch is " + mode);
         }
     }
 

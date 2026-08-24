@@ -12,8 +12,8 @@ import java.util.List;
 public interface PrivateVenueGateway {
     Exchange exchange();
     boolean configured();
-    VenueOrderSnapshot place(VenueOrderCommand command);
-    VenueOrderSnapshot cancel(VenueCancelCommand command);
+    VenueOrderSnapshot place(VenueOrderCommand command, LiveOrderAuthorization authorization);
+    VenueOrderSnapshot cancel(VenueCancelCommand command, LiveOrderAuthorization authorization);
     VenueOrderSnapshot query(VenueCancelCommand command);
     VenueAccountSnapshot account();
 

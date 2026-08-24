@@ -99,11 +99,15 @@ public interface LiveRiskReservationMapper {
             SET remaining_quantity = CASE
                     WHEN #{orderStatus} IN ('FILLED','CANCELLED','REJECTED','EXPIRED') THEN 0
                     WHEN #{orderStatus}='UNKNOWN' THEN remaining_quantity
+                    WHEN reservation_status='UNKNOWN' AND #{orderStatus}='CANCEL_REQUESTED'
+                        THEN remaining_quantity
                     ELSE GREATEST(original_quantity-COALESCE(#{filledQuantity},0),0)
                 END,
                 remaining_notional = CASE
                     WHEN #{orderStatus} IN ('FILLED','CANCELLED','REJECTED','EXPIRED') THEN 0
                     WHEN #{orderStatus}='UNKNOWN' THEN remaining_notional
+                    WHEN reservation_status='UNKNOWN' AND #{orderStatus}='CANCEL_REQUESTED'
+                        THEN remaining_notional
                     WHEN risk_increasing THEN
                         GREATEST(original_quantity-COALESCE(#{filledQuantity},0),0)
                             * reference_price
@@ -113,6 +117,8 @@ public interface LiveRiskReservationMapper {
                     WHEN #{orderStatus} IN ('FILLED','CANCELLED','REJECTED','EXPIRED')
                         THEN 'RELEASED'
                     WHEN #{orderStatus}='UNKNOWN' THEN 'UNKNOWN'
+                    WHEN reservation_status='UNKNOWN' AND #{orderStatus}='CANCEL_REQUESTED'
+                        THEN 'UNKNOWN'
                     WHEN risk_increasing AND reference_price<=0 THEN 'UNVALUED'
                     ELSE 'ACTIVE'
                 END,

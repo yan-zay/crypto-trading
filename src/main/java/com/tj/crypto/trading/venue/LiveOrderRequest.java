@@ -5,6 +5,7 @@ import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.common.domain.OrderSide;
 import com.tj.crypto.common.domain.TradeSide;
 import com.tj.crypto.execution.model.OrderType;
+import com.tj.crypto.governance.approval.DualControlRequest;
 
 import java.math.BigDecimal;
 import java.util.Locale;
@@ -26,8 +27,20 @@ public record LiveOrderRequest(
         int leverage,
         boolean reduceOnly,
         String marginMode,
-        String correlationId
+        String correlationId,
+        DualControlRequest approval
 ) {
+    public LiveOrderRequest(String accountId, String clientOrderId, String strategyId,
+                            Exchange exchange, MarketType marketType, String symbol,
+                            TradeSide side, OrderSide positionSide, OrderType orderType,
+                            BigDecimal quantity, BigDecimal limitPrice, BigDecimal referencePrice,
+                            int leverage, boolean reduceOnly, String marginMode,
+                            String correlationId) {
+        this(accountId, clientOrderId, strategyId, exchange, marketType, symbol, side,
+                positionSide, orderType, quantity, limitPrice, referencePrice, leverage,
+                reduceOnly, marginMode, correlationId, null);
+    }
+
     public LiveOrderRequest {
         if (accountId == null || accountId.isBlank()) {
             throw new IllegalArgumentException("accountId is required for a live order");

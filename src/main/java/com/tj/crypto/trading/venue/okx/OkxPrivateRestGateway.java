@@ -7,6 +7,7 @@ import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.trading.venue.LiveTradingWriteGuard;
+import com.tj.crypto.trading.venue.LiveOrderAuthorization;
 import com.tj.crypto.trading.venue.PrivateTradingProperties;
 import com.tj.crypto.trading.venue.PrivateVenueGateway;
 import com.tj.crypto.trading.venue.VenueAccountSnapshot;
@@ -72,8 +73,9 @@ public class OkxPrivateRestGateway extends VenueHttpSupport implements PrivateVe
     }
 
     @Override
-    public VenueOrderSnapshot place(VenueOrderCommand command) {
-        writeGuard.requireWriteEnabled(exchange());
+    public VenueOrderSnapshot place(VenueOrderCommand command,
+                                    LiveOrderAuthorization authorization) {
+        writeGuard.consumeOrder(command, authorization);
         requireConfigured();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("instId", instrumentId(command.instrument()));
@@ -81,8 +83,11 @@ public class OkxPrivateRestGateway extends VenueHttpSupport implements PrivateVe
         body.put("side", command.tradeSide().name().toLowerCase());
         body.put("ordType", command.orderType().name().toLowerCase());
         body.put("sz", command.quantity().toPlainString());
+        addSpotMarketQuantityUnit(body, command);
         body.put("clOrdId", command.clientOrderId());
-        if (command.price() != null) body.put("px", command.price().toPlainString());
+        if (command.orderType() == com.tj.crypto.execution.model.OrderType.LIMIT) {
+            body.put("px", command.price().toPlainString());
+        }
         if (command.instrument().marketType() == MarketType.PERPETUAL) {
             body.put("reduceOnly", command.reduceOnly());
             if (properties.getOkx().isHedgeMode()) {
@@ -96,9 +101,19 @@ public class OkxPrivateRestGateway extends VenueHttpSupport implements PrivateVe
                 null, System.currentTimeMillis(), false);
     }
 
+    /** Internal spot quantities are always base-asset quantities; make OKX's MARKET BUY size
+     * interpretation explicit instead of relying on its quote-currency default. */
+    static void addSpotMarketQuantityUnit(Map<String, Object> body, VenueOrderCommand command) {
+        if (command.instrument().marketType() == MarketType.SPOT
+                && command.orderType() == com.tj.crypto.execution.model.OrderType.MARKET) {
+            body.put("tgtCcy", "base_ccy");
+        }
+    }
+
     @Override
-    public VenueOrderSnapshot cancel(VenueCancelCommand command) {
-        writeGuard.requireCancelEnabled(exchange());
+    public VenueOrderSnapshot cancel(VenueCancelCommand command,
+                                     LiveOrderAuthorization authorization) {
+        writeGuard.consumeCancel(command, authorization);
         requireConfigured();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("instId", instrumentId(command.instrument()));
