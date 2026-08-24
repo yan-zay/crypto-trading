@@ -2,6 +2,13 @@
 
 实时加密货币交易信号引擎，基于事件驱动架构聚合市场数据并生成交易信号。
 
+## 安全状态
+
+- 当前定位为研究、回测和模拟交易平台，真实资金结论为 **RESEARCH_ONLY / NO-GO**。
+- 全局及交易所实盘写开关默认关闭；代码、单元测试或 mock 结果不构成实盘授权。
+- Agent L3/L4 目前仅为不可执行、默认拒绝的安全契约，尚未连接 OMS 或私有交易网关；L5 永不建设。
+- 中长期接线状态、外部证据和时间验收以 [`docs/agentic-quant-trading-roadmap-2026-08.md`](docs/agentic-quant-trading-roadmap-2026-08.md) 为准。
+
 ## 环境要求
 
 - **Java 17** (推荐 Eclipse Temurin)

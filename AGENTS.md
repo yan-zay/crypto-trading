@@ -10,6 +10,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 - 开始非平凡功能、P0、Agent 或实盘相关工作前，必须阅读并遵守 `docs/agentic-quant-trading-roadmap-2026-08.md`。
 - P0 实现与状态声明还必须核对 `docs/p0-acceptance-runbook.md` 的故障矩阵和真实环境证据要求。
+- 中期能力、运行接线和证据状态必须核对 `docs/medium-term-implementation-2026-08.md`。
+- 长期有界自治、Agent L3/L4、资产类别无关内核、canary/watchdog 或订单血缘工作必须核对 `docs/long-term-bounded-autonomy-implementation-2026-08.md`；当前长期模块只是不可执行安全契约/原语，L3/L4 仍为 `NOT_WIRED / NOT_VERIFIED`，L5 永不建设。
 - 该路线图定义当前 NO-GO 边界、短中长期目标、Agent 与确定性交易内核的权限边界、晋级门槛，以及不能靠代码或 mock 测试宣称完成的外部/时间验收。
 - 实现状态以代码、测试和可审计证据为准；路线图中的目标或 checklist 不自动代表已完成。
 

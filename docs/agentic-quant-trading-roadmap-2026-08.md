@@ -4,7 +4,7 @@
 >
 > 适用范围：当前 `crypto-trading` 仓库，以及由它演进出的研究、模拟和受控交易系统。
 >
-> 最近更新：2026-08-14。P0 执行清单见 `docs/p0-acceptance-runbook.md`。
+> 最近更新：2026-08-24。P0 执行清单见 `docs/p0-acceptance-runbook.md`；中期代码、接线和证据清单见 `docs/medium-term-implementation-2026-08.md`；长期有界自治安全契约、接线状态与外部验收清单见 `docs/long-term-bounded-autonomy-implementation-2026-08.md`。
 
 ## 1. 执行摘要
 
@@ -244,6 +244,26 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 
 阶段退出条件：策略晋级完全由签名制品和 policy gate 驱动；Agent 每次模型、prompt、上下文、工具调用和审批均可追溯；测试网/模拟环境持续运行无重大未解释对账事件。
 
+### 7.1 中期实施状态（截至 2026-08-21）
+
+`仓库内已实现待验收`：
+
+- trades、L2、mark/index、funding、OI、raw event 模型，版本化 Avro schema，真实 Parquet 编解码，以及 manifest/SHA-256/幂等/原子提交、raw-first WAL 和父目录持久化屏障的本地不可变归档；不支持目录 fsync 的平台 fail-closed，不能获得虚假的 durable receipt；
+- 不可变研究试验 registry，完整 trial family 预登记，数据/代码/容器/配置/依赖/模型/prompt/seed 血缘，以及成功、失败、取消的追加式 hash-chain 记录；
+- Draft → Review → Approve → Shadow → Canary → Promote/Rollback 生命周期，Ed25519 签名制品、独立审批、证据 TTL、审计和自动降级；
+- 只读组合预算、相关性/集中度、确定性压力、容量与基于 OMS 事实的 TCA 分析；PIT 输入绑定币种、event/observed time、来源 manifest、完整性和内容摘要，旧的无快照入口 fail-closed；
+- venue demo/testnet 合同认证框架、速率限制/断线离线语料和缺 owner 凭据时明确 `NOT_VERIFIED` 的外部哨兵；
+- KMS 托管断言、MFA/双人审批策略、追加式外部证据 registry 和拒绝压缩时间窗口的 readiness gate；
+- 策略 release 已接入 `StrategyManager` 运行时选择、`StrategyEngine` 信号血缘和 LIVE_CANARY 风险增加订单硬门；策略返回后会重新解析 release，逐笔命令使用短 TTL 单次不透明 permit、一次性 MFA 双人审批和追加式授权血缘，最终网关边界会再次校验；HALT 保留已验证减仓/撤单，模糊 mutation 结果进入 `UNKNOWN` 并保留预占；
+- Agent L1 结构化假设/实验计划，Agent L2 仅 PAPER/SHADOW 的短 TTL 提案、预算、审计和撤销；审批摘要、proposal/use ID 与 verifier receipt 绑定认证 operator；
+- prompt injection、越权、投毒、工具误用、secret、复现率、成本、延迟和无 Agent 基线的确定性评测与内容寻址报告；有序 trace 覆盖完整模型/上下文/工具/审批/policy/结果链并由 evaluator 重算 root。
+
+`NOT_WIRED`：实时 raw-first journal 尚未逐一接入 Binance/OKX/Coinglass 连接器；试验 registry 尚未成为全部研究入口；策略 release 尚未接配置发布和真实 paper/shadow consumer，实盘硬门虽已接入但外部信任根默认拒绝且写开关关闭；组合分析尚未接 point-in-time 运行快照和硬风控；venue 框架没有 owner 管理的真实 probe；Agent L1/L2 尚未接真实模型，L2 仍只是不可执行提案；Agent 评测尚未接真实模型 trace、CI 和晋级门。独立组件存在不能冒充端到端能力。
+
+`外部阻塞/时间验收`：owner testnet/demo、真实 KMS/Vault/HSM 与 MFA/双人审批、PITR、RPO/RTO、外部告警到达、24h/7d soak/chaos、私有流长稳、真实模型红队、30～90 天 forward paper/shadow、专项法律意见和不可变真实数据上的 Alpha 证据均未完成。
+
+因此，中期阶段退出条件仍未满足；系统继续保持 **RESEARCH_ONLY / NO-GO**，交易所和全局实盘写开关保持关闭。逐项代码位置、验证命令和证据要求以 `docs/medium-term-implementation-2026-08.md` 为准。
+
 ## 8. 长期目标（12～24+ 个月）
 
 目标：仅在合法、证据充分的边界内建设小资金、有上限、可回退的自治交易。
@@ -258,6 +278,26 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 - 永不建设可自由提款、改权限、改硬风控、在线自修改并自行晋级的 L5。
 
 阶段退出条件：专项法律意见仍有效；至少跨越多个市场状态的样本外和 shadow/live 证据成立；每个订单可追溯；可随时停止、恢复、回滚和人工接管。
+
+### 8.1 长期实施状态（截至 2026-08-24）
+
+`仓库内安全契约已实现待验收`：
+
+- 资产类别无关的金额/数量/标的规格、账户/子账户拓扑、签名资本/风险政策、唯一 active-head 解析端口和只减不增的紧急修订验证；
+- 不可派单的 target-position 执行规划器，精确绑定 PIT 持仓/估值、标的规格、账户、venue、资本 envelope、策略 release、政策、交易日历 capability 和短 TTL，所有 candidate/plan 均固定 `dispatchAuthorized=false`；
+- L3/L4 分级长期 readiness gate，对法律、复现、Alpha、一致性、风控、对账、安全、运维、Agent、资本、owner venue 和跨市场状态 12 类 typed evidence 全量 fail-closed；L4 必须绑定同一 subject 的有效 L3 GO；
+- 内容寻址 champion/challenger 指标、固定 `1 → 5 → 10 → 25 bps` 资本阶梯、逐级外部审批和 HOLD/降级/回滚/HALT 决策；
+- 独立 watchdog、权威 observation、持久 current-head/CAS 端口、人工接管和 HALTED → DEGRADED → NORMAL 的分步双控恢复契约；
+- Agent L3 不可执行建议与 L4 全内容寻址 policy、短 TTL 单次 capability、完整 exact-use 摘要和默认拒绝的 durable port；Agent 包没有 OMS、gateway、secret、Signer、Kill Switch 或配置写依赖；
+- V23 不可变有界自治控制面和 V24 每订单决策血缘；V24 envelope 覆盖市场事实、策略/build/Agent、instrument、PIT snapshot、政策、审批/capability 和 exact command；
+- 现有 crypto live 路径进一步 fail-closed：普通 Admin API 不能放松 Kill Switch，LIVE_CANARY MARKET 开仓不接受调用方自报估值，不支持的 contract multiplier/OKX perpetual 估值继续阻断，最终 gateway 边界再次消费一次性 permit；
+- `AutonomyLevel` 不包含 L5；自由提款、读 secret、改权限/硬风控、自我修改并自行晋级属于永久禁止的架构回归。
+
+`NOT_WIRED`：资产无关能力目前仍是资本/标的规格/不可派单 planning 控制面，现有 backtest、paper、OMS、risk reservation、private stream 和 venue adapter 尚未迁移；capital active head、PIT valuation/FX、OMS 原子预算、signer/executor、readiness 外部 verifier、canary/watchdog 资金面 applier、Agent L3/L4 模型/身份/store/consumer、V23/V24 mapper/service 与现有 Signal/OMS 强制入口均未接通。任何独立原语或 schema 的存在都不能冒充端到端能力。
+
+`NOT_VERIFIED / 外部阻塞/时间验收`：P0/中期阶段退出、专项法律意见、合规券商/venue、owner 账户与合同、真实 KMS/HSM/IdP/MFA/双控、MySQL/CI、PITR/RPO/RTO、值班/告警/chaos/soak、真实模型红队、30～90 天 forward、多个市场状态和每个小资金资本阶梯均未取得完整证据。12～24+ 个月目标不能用固定时钟、mock 或本轮代码压缩完成。
+
+因此长期阶段退出条件仍未满足；Agent L3/L4 均保持 `NOT_WIRED / NOT_VERIFIED`，L5 永不建设，系统继续保持 **RESEARCH_ONLY / NO-GO**。逐项代码位置、验证命令和证据要求以 `docs/long-term-bounded-autonomy-implementation-2026-08.md` 为准。
 
 ## 9. Agent 与确定性内核的边界
 

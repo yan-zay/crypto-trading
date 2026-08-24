@@ -14,6 +14,8 @@ This file guides Claude Code and other development agents working in this reposi
 
 - `docs/agentic-quant-trading-roadmap-2026-08.md`：当前权威实施路线图，定义 P0、短中长期目标、Agent/确定性内核边界、晋级门槛和不可由代码宣称完成的外部验收；规划和状态声明必须与其一致。
 - `docs/p0-acceptance-runbook.md`：P0 执行命令、故障矩阵、证据要求和当前 NO-GO 验收记录。
+- `docs/medium-term-implementation-2026-08.md`：中期代码交付、运行接线、验证入口和外部/时间证据事实清单。
+- `docs/long-term-bounded-autonomy-implementation-2026-08.md`：长期有界自治安全契约、Agent L3/L4、资产类别无关原语、canary/watchdog、订单血缘及阶段退出事实清单；当前 L3/L4 均未接线/未验证，L5 永不建设。
 - `docs/crypto-trading-system-blueprint.md`：总体蓝图。
 - `docs/architecture/trading-core-hardening-2026-07.md`：本轮真实修复、能力与边界。
 - `docs/architecture/oms-ems.md`：OMS/EMS 定义、订单持久化和一致性边界。
