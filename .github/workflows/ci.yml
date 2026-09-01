@@ -96,7 +96,13 @@ jobs:
       run: |
         java -jar target/crypto-trading.jar --spring.profiles.active=ci > target/startup.log 2>&1 &
         app_pid=$!
-        trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+        cleanup() {
+          kill "$app_pid" 2>/dev/null || true
+          MYSQL_PWD="$DB_PASSWORD" mysql --protocol=tcp -h127.0.0.1 -P3306 \
+            -u"$DB_USERNAME" crypto_trading \
+            -e "DELETE FROM admin_user WHERE username='ci-e2e-admin'" >/dev/null 2>&1 || true
+        }
+        trap cleanup EXIT
         ready=false
         for attempt in $(seq 1 60); do
           if curl -fsS http://127.0.0.1:51105/actuator/health/readiness; then
@@ -113,11 +119,22 @@ jobs:
           cat target/startup.log
           exit 1
         fi
+        MYSQL_PWD="$DB_PASSWORD" mysql --protocol=tcp -h127.0.0.1 -P3306 \
+          -u"$DB_USERNAME" crypto_trading <<'SQL'
+        INSERT INTO admin_user (username, password_hash, role, enabled)
+        VALUES ('ci-e2e-admin', '$2a$12$scsGWlvKVZOY4VyUQjasYe8M6NwVyI.tVasnmGzNNyLDt6hsk1zoe', 'ADMIN', 1)
+        ON DUPLICATE KEY UPDATE
+          password_hash = VALUES(password_hash),
+          role = VALUES(role),
+          enabled = VALUES(enabled);
+        SQL
         cd frontend
         VITE_API_TARGET=http://127.0.0.1:51104 npm run test:e2e:real
       env:
         DB_USERNAME: root
         DB_PASSWORD: root
+        E2E_ADMIN_USERNAME: ci-e2e-admin
+        E2E_ADMIN_PASSWORD: ci-e2e-only-2026
 
     - name: Record checksums and build provenance
       shell: bash
