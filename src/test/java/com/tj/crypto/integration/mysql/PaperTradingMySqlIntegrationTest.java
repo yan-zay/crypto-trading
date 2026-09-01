@@ -65,8 +65,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaperTradingMySqlIntegrationTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(
-            "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
             .withDatabaseName("crypto_trading")
             .withUsername("crypto_test")
             .withPassword("crypto_test");
@@ -201,8 +200,7 @@ class PaperTradingMySqlIntegrationTest {
 class MySqlFlywayUpgradeIntegrationTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(
-            "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
             .withDatabaseName("crypto_upgrade")
             .withUsername("crypto_upgrade")
             .withPassword("crypto_upgrade");

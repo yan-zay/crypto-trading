@@ -16,8 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers(disabledWithoutDocker = true)
 class ExperimentRegistryMySqlIntegrationTest {
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(
-            "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
             .withDatabaseName("crypto_experiment_registry")
             .withUsername("crypto_experiment")
             .withPassword("crypto_experiment");

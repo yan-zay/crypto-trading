@@ -32,6 +32,8 @@
         <jackson-bom.version>2.21.4</jackson-bom.version>
         <spring-framework.version>6.2.19</spring-framework.version>
         <tomcat.version>10.1.55</tomcat.version>
+        <micrometer.version>1.15.12</micrometer.version>
+        <aircompressor.version>2.0.3</aircompressor.version>
         <git.commit>UNKNOWN</git.commit>
     </properties>
 
@@ -134,17 +136,17 @@
             <artifactId>avro</artifactId>
             <version>1.11.5</version>
         </dependency>
-        <!-- parquet-hadoop 的公开类签名需要 Hadoop client API；runtime 使用官方 shaded 包隔离依赖。 -->
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>aircompressor</artifactId>
+            <version>${aircompressor.version}</version>
+        </dependency>
+        <!-- Parquet 使用 LocalOutputFile、NIO InputFile 与 PlainParquetConfiguration；
+             只保留公开类签名所需的 Hadoop API，不打包含旧 Jetty/JLine/Jackson 的 shaded runtime。 -->
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client-api</artifactId>
             <version>${hadoop.client.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-client-runtime</artifactId>
-            <version>${hadoop.client.version}</version>
-            <scope>runtime</scope>
         </dependency>
     </dependencies>
 

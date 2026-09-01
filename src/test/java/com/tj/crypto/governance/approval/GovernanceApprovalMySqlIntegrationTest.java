@@ -1,5 +1,7 @@
 package com.tj.crypto.governance.approval;
 
+import com.tj.crypto.integration.mysql.MySqlTestImage;
+
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -17,8 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers(disabledWithoutDocker = true)
 class GovernanceApprovalMySqlIntegrationTest {
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(
-            "mysql:8.0.46@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
             .withDatabaseName("crypto_governance_approval")
             .withUsername("crypto_governance")
             .withPassword("crypto_governance");

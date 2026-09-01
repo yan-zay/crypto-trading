@@ -107,7 +107,8 @@ final class ParquetMarketEventCodec {
                 .withDataModel(dataModel)
                 .withConf(CONFIGURATION)
                 .withWriteMode(ParquetFileWriter.Mode.CREATE)
-                .withCompressionCodec(CompressionCodecName.GZIP)
+                .withCompressionCodec(CompressionCodecName.UNCOMPRESSED)
+                .withCodecFactory(UncompressedParquetCodecFactory.INSTANCE)
                 .withRowGroupSize(16L * 1024 * 1024)
                 .withPageSize(1024 * 1024)
                 .withWriterVersion(ParquetProperties.WriterVersion.PARQUET_2_0)
@@ -137,6 +138,7 @@ final class ParquetMarketEventCodec {
                         new NioParquetInputFile(source), CONFIGURATION)
                 .withDataModel(dataModel)
                 .disableCompatibility()
+                .withCodecFactory(UncompressedParquetCodecFactory.INSTANCE)
                 .usePageChecksumVerification()
                 .build()) {
             GenericRecord record;

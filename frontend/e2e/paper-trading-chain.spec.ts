@@ -123,7 +123,7 @@ test('operates and inspects the complete paper trading chain', async ({ page }) 
   await expect(page.getByTestId('paper-orders-table').getByText('ACKNOWLEDGED')).toBeVisible();
   await page.locator('[data-testid="paper-orders-table"] .ant-btn-dangerous').click();
   await expect(page.getByText('Cancel this order?')).toBeVisible();
-  await page.getByRole('button', { name: 'OK' }).click();
+  await page.locator('.ant-popconfirm-buttons .ant-btn-primary:visible').click({ force: true });
   await expect(page.getByTestId('paper-orders-table').getByText('CANCELLED')).toBeVisible();
 
   await page.getByText(/Executions \(1\)/).click();
