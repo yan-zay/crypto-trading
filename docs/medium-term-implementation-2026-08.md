@@ -317,14 +317,24 @@ npm run test:e2e
 
 后续建议保持以下顺序：
 
-1. 短期：取得同一候选提交的 CI/Security、fresh MySQL、真实非 mock E2E，并启动 30～90 天 Paper/Shadow；修复所有 parity 差异后才谈晋级。
+1. 短期：同一候选提交的 CI/Security、fresh MySQL 和真实非 mock E2E 已取得；下一步启动 30～90 天 Paper/Shadow，修复所有 parity 差异后才谈晋级。
 2. 中期：把 registry、PIT portfolio、connector certification 和 Agent eval 变成强制发布门；建设对象存储与连续 replay，但继续让 L1/L2 只产生研究计划或 Paper/Shadow 提案。
 3. 长期：只建设有界 L3/L4 控制面、独立 watchdog/canary 和资产无关事实内核；所有最终交易写权限继续由确定性 policy/OMS/gateway 独占，L5 永不建设。
 
 多语言决策是“Java 主内核 + Python 研究面 + TypeScript 控制台/受限编排”，通过版本化 schema、manifest 和 SHA-256 边界协作，不采用共享可变内存或让动态语言进入最终写路径。当前明确不对接券商；券商 adapter、凭据、FIX/FIXP 与美股交易日历均不属于短中期 backlog，未来需项目所有者重新明确授权。
 
-本批验证快照：Java 17 全量回归 1053 tests / 0 failures / 0 errors / 14 skipped；目标 MySQL 8.0.34 V26→V27 upgrade 成功且无失败迁移；独立临时库 V1→V27 fresh migration 成功并在核验后删除；`pro + RESEARCH_ONLY` 禁用外部连接器、Agent 模型和实盘写的真实 Spring 启动成功；Python worker 3/3；前端 production audit 0 vulnerability、lint/build、Playwright 8/8。首轮远端 CI 暴露的 Testcontainers digest 兼容元数据、Ant 弹层时序和镜像依赖漏洞已在候选代码中修复；最终状态必须以后续同一候选提交 workflow 为准。
+本批验证快照：Java 17 本地全量回归 1053 tests / 0 failures / 0 errors / 14 skipped；目标 MySQL 8.0.34 V26→V27 upgrade 成功且无失败迁移；独立临时库 V1→V27 fresh migration 成功并在核验后删除；`pro + RESEARCH_ONLY` 禁用外部连接器、Agent 模型和实盘写的真实 Spring 启动成功；Python worker 3/3；前端 production audit 0 vulnerability、lint/build、Playwright 8/8。远端候选提交 `2ebd3a6` 上，CI 的 Java/MySQL 回归为 1053/0/0/0，真实 Spring/MySQL/Chromium 路径 1/1 通过，Security 的 secrets/filesystem、生产镜像与 Java/TypeScript/Python CodeQL 全部通过。
 
 ## 14. 2026-09-01 中期仓库接线收口
 
 V27 是中期运行接线的数据库边界：强制 backtest registry lineage、生命周期 Signal 路由、Agent 模型输出/评测摘要以及 L2 proposal single-use scope。中期代码完成不改变下列事实：owner venue、KMS/MFA/双人审批、真实模型红队、PITR/RPO/RTO、7 天私有流/chaos/soak 和 30～90 天 forward 只能由真实外部运行取得。它们完成前，中期阶段状态只能是 **“仓库接线完成，外部与时间验收进行中”**。
+
+## 15. 2026-09-01 同候选提交远端证据
+
+| 证据 | 结果 |
+|---|---|
+| 候选提交 | `2ebd3a6dd172e082ecb35af18e92a9a316fdd5d6` |
+| GitHub CI | [33526832293](https://github.com/yan-zay/crypto-trading/actions/runs/33526832293)：全部通过；Java/MySQL `1053/0/0/0`，前端 audit/lint/build/mock E2E 通过，Python worker 通过，真实 Spring/MySQL/Chromium 登录与 overview `1/1` 通过，制品与 provenance 上传成功 |
+| GitHub Security | [33526832298](https://github.com/yan-zay/crypto-trading/actions/runs/33526832298)：全部通过；secrets/filesystem、生产镜像与 Java/TypeScript/Python CodeQL 无阻断项 |
+
+该证据将仓库内中期接线、可复现构建、真实 MySQL 迁移/集成用例和非 mock 登录路径从“待验证”提升为“已验证”。它不包含 owner venue、真实模型、外部信任根、恢复演练或持续时间证据，因此不改变 **RESEARCH_ONLY / NO-GO** 结论。

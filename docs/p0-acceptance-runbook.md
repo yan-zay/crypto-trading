@@ -93,5 +93,6 @@ npm run test:e2e
 - `pro + RESEARCH_ONLY` 在目标 MySQL V26 上以全部外部行情连接器和实盘写关闭的方式真实启动成功；启动探针修复了生命周期 gate 多构造器注入和“已禁用历史默认账户误阻断生产启动”问题，随后全量回归通过。
 - 依赖解析为 Spring Boot 3.5.14、Spring Framework 6.2.19、Tomcat 10.1.55、Jackson 2.21.4；本机 Docker daemon 不可用，容器构建与 Trivy 镜像结果仍必须由同一候选提交的 Security workflow 给出。
 - 当前不开展券商接入；不新增券商密钥、订单 adapter、FIX session 或券商依赖。加密 venue 写开关同样继续关闭。
+- 候选提交 `2ebd3a6` 的 [CI](https://github.com/yan-zay/crypto-trading/actions/runs/33526832293) 和 [Security](https://github.com/yan-zay/crypto-trading/actions/runs/33526832298) 已全部通过：远端 MySQL 8/Java 回归 1053/0/0/0，真实 Spring/MySQL/Chromium 路径 1/1，生产镜像与三语言 CodeQL 无阻断项。这仅关闭候选提交的 CI/数据库/非 mock E2E 证据缺口，不关闭本手册第 6～7 节的时间和外部批准条件。
 
 当前判定：本批 P0 仓库工程和目标库升级已完成；P0 整体仍因法律、owner venue、全量交易所真相、KMS/MFA、DR/soak、forward 观察和同一候选提交 CI 证据缺失而保持 **NO-GO**。

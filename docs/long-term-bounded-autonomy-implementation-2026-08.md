@@ -325,4 +325,4 @@ npm run test:e2e
 - Java 保持账户真相、风险预算、OMS、账本、对账、签名与 Kill Switch 所有权；Python/未来模型服务只产生内容寻址研究制品或受限 proposal；TypeScript 负责控制台和受审工具编排。
 - 先证明 Backtest/Paper/Shadow 差分一致和 Agent 相对无 Agent 基线的增量价值，再逐级考虑 L3 人审建议与 L4 预授权 envelope；任何门槛缺失均 fail-closed。
 - 当前不对接券商，也不为 Alpaca、IBKR、FIX/FIXP 预置凭据、连接器或订单路径。资产类别无关接口只作为稳定演进边界；是否接入美股或券商必须在未来重新授权，并重新完成法律、市场规则、账户真相、交易日历和 owner contract 认证。
-- 2026-09-01 最新本机证据为 Java 1053/0/0/14、MySQL 8.0.34 V5→V27 upgrade 与 V1→V27 fresh 成功、`pro + RESEARCH_ONLY` 真实 Spring 启动成功、Python 3/3、前端 Playwright 8/8；这些结果不改变 L3/L4 `NOT_WIRED / NOT_VERIFIED`，也不替代最终候选 CI、真实模型、owner venue 或持续时间验收。
+- 2026-09-01 最新本机证据为 Java 1053/0/0/14、MySQL 8.0.34 V5→V27 upgrade 与 V1→V27 fresh 成功、`pro + RESEARCH_ONLY` 真实 Spring 启动成功、Python 3/3、前端 Playwright 8/8；候选提交 `2ebd3a6` 的远端 [CI](https://github.com/yan-zay/crypto-trading/actions/runs/33526832293) 与 [Security](https://github.com/yan-zay/crypto-trading/actions/runs/33526832298) 也已全部通过。这些结果不改变 L3/L4 `NOT_WIRED / NOT_VERIFIED`，也不替代真实模型、owner venue、外部信任根或持续时间验收。

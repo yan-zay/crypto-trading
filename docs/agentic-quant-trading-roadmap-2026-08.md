@@ -76,7 +76,7 @@ Agent 负责非确定性的研究、实验编排、解释和运维辅助；Java 
 - [x] 实盘初始命令 INSERT-only；V14 以 `account + exchange` 行锁将 OMS 初始事实和 gross-notional 预算原子预占，`UNKNOWN` 保留预算，终态才释放；
 - [x] 交易所真相 capability gate：已知订单恢复与账户级订单/成交/余额/持仓真相必须双 READY；能力缺失、查询失败或差异触发 `BLOCKED + HALT`；
 - [x] `RESEARCH_ONLY` 部署硬门、Sandbox endpoint allowlist、独立且不继承运维/风控权限的 `LIVE_TRADER`、JSON 登录、外部 webhook 告警；
-- [x] MySQL/Testcontainers fresh migration + paper/账本/对账黄金路径（本机 Docker 不可用，等待 CI 真实执行）；
+- [x] MySQL/Testcontainers fresh migration + paper/账本/对账黄金路径（候选提交 `2ebd3a6` 已在 GitHub CI 的 MySQL 8 中真实执行，无 skip-green）；
 - [x] purged/embargo、Deflated Sharpe 和 CSCV/PBO 统计工具；
 - [x] 不可变数据 manifest/SHA-256 校验、完整试验族预登记和黄金策略本地认证流水线；报告强制 `alphaCertified=false`；
 - [x] Agent L0 固定白名单只读研究查询，无模型、凭据和交易写工具。
@@ -90,7 +90,7 @@ Agent 负责非确定性的研究、实验编排、解释和运维辅助；Java 
 - JDK 17 / Maven Wrapper 3.9.9：`./mvnw clean verify -B` 运行 716 项测试，0 failure、0 error、4 skipped；4 项均为本机 Docker 不可用时明确跳过的 MySQL/Testcontainers 用例。随后针对研究模式门禁作用域新增回归测试，相关 12 项聚焦测试通过；下一次全量基线应为 717 项。
 - MySQL fresh migration、V11→V14 upgrade、paper/账本/对账黄金路径和风险预占并发用例已进入测试；CI guard 在 `CI=true` 且 Docker 不可用时直接失败，当前本机结果不冒充真实容器验收。
 - 相同输入连续两次构建：JAR SHA-256 均为 `D270C9B9A99D102FB6737E6A156824BA8537508A5AF570412A38063E6EFCAFCA`；SBOM SHA-256 均为 `79971C01676FD766006ADB48AF5B5E14AE325E42430F2966B218450E717E7310`。
-- 前端 production dependency audit 为 0 漏洞；lint、production build 和 8 项 Playwright mock-contract E2E 通过。真实 Spring/MySQL E2E 已写入 CI，但尚无远端 workflow 运行证据。
+- 前端 production dependency audit 为 0 漏洞；lint、production build 和 8 项 Playwright mock-contract E2E 通过。候选提交 `2ebd3a6` 的真实 Spring/MySQL/Chromium 登录与 overview 路径 1/1 通过，远端 CI/Security 均为 success。
 - GitHub workflow/application YAML 严格拒绝重复键并解析通过；POM/JSON、bash、PowerShell、Compose 静态检查和 `git diff --check` 通过；Actions 均固定到 40 位 commit SHA。
 
 因此，本轮可准确表述为：**P0/短期的仓库内工程实现已形成可测试基线，但 P0 和短期阶段退出条件尚未整体验收，真实资金继续 NO-GO。**
@@ -102,12 +102,12 @@ Agent 负责非确定性的研究、实验编排、解释和运维辅助；Java 
 | 优先级 | 本批次仓库交付 | 当前准确状态 |
 |---|---|---|
 | P0 | Bar 在任何总线订阅者和连接器回调前统一准入；Binance/OKX/Coinglass WebSocket 识别出的实时载荷 raw-first fsync，Bar/Liquidation 可归档；Signal 与 Paper 执行同事务；`signal_event` 追加式；配置发布/回滚加锁、校验和与单 ACTIVE 约束；Paper 接入 `Target → RiskAdjustedTarget → OrderIntent`；依赖安全升级 | **仓库实现完成、目标 MySQL upgrade 已验证，生产与持续时间证据待验收** |
-| P1 | 数据连接器认证 kit 固化 raw、准入、序列、背压和 replay 合同；差分 replay 比较输入、制品、信号、订单、费用、PnL 与组合结果；CI/Security 纳入 `codex/**` 和 Python worker | **离线合同已实现，owner venue 与同一候选提交 CI 未验证** |
+| P1 | 数据连接器认证 kit 固化 raw、准入、序列、背压和 replay 合同；差分 replay 比较输入、制品、信号、订单、费用、PnL 与组合结果；CI/Security 纳入 `codex/**` 和 Python worker | **离线合同已实现，同候选提交 CI/Security 已验证；owner venue 仍未验证** |
 | P2 | 新增隔离的 Python/Polars/PyArrow 研究 worker，只消费内容寻址 Parquet manifest，只输出 `executionAuthorized=false` 的内容寻址报告 | **研究能力已实现；不在订单、OMS、凭据或最终风控路径中** |
 
 技术边界调整为：Java 17 继续拥有领域事实、硬风控、OMS、账本、事务和所有最终写权限；Python 用于数据工程、统计研究和模型实验；React/TypeScript 用于控制台，未来如引入 Agent 编排也只能调用受 schema、预算、TTL 和审计约束的工具。跨语言通过不可变 manifest、版本化 schema 和内容摘要协作，禁止让 Python/JS/LLM 直接持有交易凭据或绕过 Java 确定性内核。
 
-短期目标的**仓库工程增量**已完成；但原路线图定义的短期阶段退出仍包含干净候选提交 CI、fresh MySQL、真实非 mock E2E、24h/7d 故障运行和 30～90 天 forward paper/shadow，不能在一次开发会话中伪造。故阶段状态为 **“工程实施完成，外部/时间验收进行中”**，不是生产 `GO`。
+短期目标的**仓库工程增量**已完成，干净候选提交 CI/Security、fresh MySQL 和真实非 mock E2E 也已取得。原路线图定义的短期阶段退出仍包含 24h/7d 故障运行、30～90 天 forward paper/shadow 以及 owner 外部证据，不能在一次开发会话中伪造。故阶段状态为 **“工程实施完成，外部/时间验收进行中”**，不是生产 `GO`。
 
 ## 4. P0：真实资金前置阻断项
 
@@ -259,7 +259,7 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 
 阶段退出条件：策略晋级完全由签名制品和 policy gate 驱动；Agent 每次模型、prompt、上下文、工具调用和审批均可追溯；测试网/模拟环境持续运行无重大未解释对账事件。
 
-### 7.1 中期实施状态（截至 2026-08-21）
+### 7.1 中期实施状态（截至 2026-09-01）
 
 `仓库内已实现待验收`：
 
@@ -310,7 +310,7 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 
 `NOT_WIRED`：资产无关能力目前仍是资本/标的规格/不可派单 planning 控制面，现有 backtest、paper、OMS、risk reservation、private stream 和 venue adapter 尚未迁移；capital active head、PIT valuation/FX、OMS 原子预算、signer/executor、readiness 外部 verifier、canary/watchdog 资金面 applier、Agent L3/L4 模型/身份/store/consumer、V23/V24 mapper/service 与现有 Signal/OMS 强制入口均未接通。任何独立原语或 schema 的存在都不能冒充端到端能力。
 
-`NOT_VERIFIED / 外部阻塞/时间验收`：P0/中期阶段退出、专项法律意见、合规券商/venue、owner 账户与合同、真实 KMS/HSM/IdP/MFA/双控、MySQL/CI、PITR/RPO/RTO、值班/告警/chaos/soak、真实模型红队、30～90 天 forward、多个市场状态和每个小资金资本阶梯均未取得完整证据。12～24+ 个月目标不能用固定时钟、mock 或本轮代码压缩完成。
+`NOT_VERIFIED / 外部阻塞/时间验收`：P0/中期阶段退出、专项法律意见、合规券商/venue、owner 账户与合同、真实 KMS/HSM/IdP/MFA/双控、目标生产数据库与 PITR/RPO/RTO、值班/告警/chaos/soak、真实模型红队、30～90 天 forward、多个市场状态和每个小资金资本阶梯均未取得完整证据。候选提交的 GitHub CI/Security 已通过，但不替代上述外部与时间证据；12～24+ 个月目标不能用固定时钟、mock 或本轮代码压缩完成。
 
 因此长期阶段退出条件仍未满足；Agent L3/L4 均保持 `NOT_WIRED / NOT_VERIFIED`，L5 永不建设，系统继续保持 **RESEARCH_ONLY / NO-GO**。逐项代码位置、验证命令和证据要求以 `docs/long-term-bounded-autonomy-implementation-2026-08.md` 为准。
 
