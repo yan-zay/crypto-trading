@@ -22,7 +22,8 @@ WORKDIR /app
 COPY --from=builder /app/target/crypto-trading.jar app.jar
 
 # 固定基础镜像可能晚于 Alpine 安全仓库，构建时强制取得已修复的 OpenSSL 下限。
-RUN apk add --no-cache --upgrade 'libcrypto3>=3.5.8-r0' 'libssl3>=3.5.8-r0'
+RUN apk add --no-cache --upgrade 'libcrypto3>=3.5.8-r0' 'libssl3>=3.5.8-r0' \
+    'libexpat>=2.8.4-r0'
 
 # 创建非 root 用户
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

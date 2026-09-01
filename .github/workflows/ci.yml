@@ -61,6 +61,13 @@ jobs:
     - name: Enable Maven Wrapper
       run: chmod +x mvnw
 
+    - name: Allow deterministic migration triggers in CI MySQL
+      run: |
+        mysql_container="$(docker ps --filter publish=3306 --format '{{.ID}}' | head -n 1)"
+        test -n "$mysql_container"
+        docker exec "$mysql_container" mysql -uroot -proot \
+          -e "SET GLOBAL log_bin_trust_function_creators=1"
+
     - name: Verify Backend
       run: |
         build_timestamp="$(git show -s --format=%cI HEAD)"

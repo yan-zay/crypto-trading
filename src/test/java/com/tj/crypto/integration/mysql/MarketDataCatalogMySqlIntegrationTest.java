@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers(disabledWithoutDocker = true)
 class MarketDataCatalogMySqlIntegrationTest {
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
+    private static final MySQLContainer<?> MYSQL = MySqlTestImage.container()
             .withDatabaseName("crypto_market_catalog")
             .withUsername("crypto_market")
             .withPassword("crypto_market");

@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Testcontainers(disabledWithoutDocker = true)
 class GovernanceApprovalMySqlIntegrationTest {
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
+    private static final MySQLContainer<?> MYSQL = MySqlTestImage.container()
             .withDatabaseName("crypto_governance_approval")
             .withUsername("crypto_governance")
             .withPassword("crypto_governance");

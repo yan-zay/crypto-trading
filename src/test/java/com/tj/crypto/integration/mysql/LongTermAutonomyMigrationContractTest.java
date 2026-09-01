@@ -347,7 +347,7 @@ class LongTermAutonomyMigrationContractTest {
 class LongTermAutonomyMigrationMySqlTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
+    private static final MySQLContainer<?> MYSQL = MySqlTestImage.container()
             .withDatabaseName("crypto_long_term_autonomy")
             .withUsername("crypto_autonomy")
             .withPassword("crypto_autonomy");

@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers(disabledWithoutDocker = true)
 class LiveRiskReservationMySqlIntegrationTest {
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
+    private static final MySQLContainer<?> MYSQL = MySqlTestImage.container()
             .withDatabaseName("crypto_risk_reservation")
             .withUsername("crypto_risk")
             .withPassword("crypto_risk");

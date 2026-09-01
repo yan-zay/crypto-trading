@@ -227,7 +227,7 @@ class LongTermOrderLineageMigrationContractTest {
 class LongTermOrderLineageMigrationMySqlTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>(MySqlTestImage.pinned())
+    private static final MySQLContainer<?> MYSQL = MySqlTestImage.container()
             .withDatabaseName("crypto_order_lineage")
             .withUsername("crypto_lineage")
             .withPassword("crypto_lineage");

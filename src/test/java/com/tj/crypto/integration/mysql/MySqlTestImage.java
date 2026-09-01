@@ -1,6 +1,7 @@
 package com.tj.crypto.integration.mysql;
 
 import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.containers.MySQLContainer;
 
 /** Pinned MySQL image with explicit Testcontainers compatibility metadata. */
 public final class MySqlTestImage {
@@ -12,5 +13,10 @@ public final class MySqlTestImage {
 
     public static DockerImageName pinned() {
         return PINNED;
+    }
+
+    public static MySQLContainer<?> container() {
+        return new MySQLContainer<>(PINNED)
+                .withCommand("--log-bin-trust-function-creators=1");
     }
 }
