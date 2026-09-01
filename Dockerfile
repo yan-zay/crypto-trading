@@ -1,5 +1,5 @@
 # 多阶段构建：固定 Maven Wrapper + Java 17 构建阶段
-FROM eclipse-temurin:17-jdk-alpine@sha256:638937c54b6d63f0973a20501973e7c433a36b1f22262bd2b25afa7be5ff8c4a AS builder
+FROM eclipse-temurin:17-jdk-alpine@sha256:c51823b135b92507d1b67183c257b08167e57fe141c387ee7af94eddf9baa994 AS builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY src ./src
 RUN ./mvnw clean package -DskipTests -B
 
 # 运行阶段
-FROM eclipse-temurin:17-jre-alpine@sha256:02320dd4ce20e243dfb915c686089cf9315c763084fafbb12d5c9993aee18b57
+FROM eclipse-temurin:17-jre-alpine@sha256:90b7615cb81e3a75f69124fb480e48981c7d56dbc9f32c614d789d3a1c3e32fe
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ COPY --from=builder /app/target/crypto-trading.jar app.jar
 
 # 创建非 root 用户
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-RUN mkdir -p /app/data/spool /app/data/exports \
+RUN mkdir -p /app/data/spool /app/data/exports /app/data/market-journal \
     && chown -R appuser:appgroup /app/data
 USER appuser
 
@@ -31,6 +31,7 @@ USER appuser
 ENV SPRING_PROFILES_ACTIVE=pro
 ENV BAR_SPOOL_FILE=/app/data/spool/finalized-bars.jsonl
 ENV DATASET_EXPORT_DIR=/app/data/exports
+ENV MARKETDATA_REALTIME_JOURNAL_ROOT=/app/data/market-journal
 VOLUME ["/app/data"]
 
 # 暴露应用端口；管理端口默认仍只绑定容器 loopback

@@ -36,6 +36,12 @@ build/
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+research-python/*.egg-info/
+research-python/src/*.egg-info/
 !**/src/main/**/build/
 !**/src/test/**/build/
 

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, 'codex/**' ]
   pull_request:
     branches: [ main ]
 
@@ -10,6 +10,26 @@ permissions:
   contents: read
 
 jobs:
+  research-python:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+    - name: Set up Python 3.13
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.13.7'
+        cache: pip
+        cache-dependency-path: research-python/requirements.lock
+    - name: Install locked research dependencies
+      working-directory: research-python
+      run: python -m pip install -r requirements.lock
+    - name: Verify isolated research worker
+      working-directory: research-python
+      env:
+        PYTHONPATH: src
+      run: python -m unittest discover -s tests -v
+
   backend:
     runs-on: ubuntu-24.04
 
@@ -104,8 +124,8 @@ jobs:
           --arg maven "$(./mvnw --version | head -n 1)" \
           --arg runnerImage "${ImageOS:-unknown}:${ImageVersion:-unknown}" \
           --arg mysqlImage "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b" \
-          --arg builderImage "eclipse-temurin:17-jdk-alpine@sha256:638937c54b6d63f0973a20501973e7c433a36b1f22262bd2b25afa7be5ff8c4a" \
-          --arg runtimeImage "eclipse-temurin:17-jre-alpine@sha256:02320dd4ce20e243dfb915c686089cf9315c763084fafbb12d5c9993aee18b57" \
+          --arg builderImage "eclipse-temurin:17-jdk-alpine@sha256:c51823b135b92507d1b67183c257b08167e57fe141c387ee7af94eddf9baa994" \
+          --arg runtimeImage "eclipse-temurin:17-jre-alpine@sha256:90b7615cb81e3a75f69124fb480e48981c7d56dbc9f32c614d789d3a1c3e32fe" \
           '{commit:$commit,sourceRef:$sourceRef,buildTimestamp:$buildTimestamp,
             toolchain:{java:$java,maven:$maven,runnerImage:$runnerImage},
             baseImages:[$mysqlImage,$builderImage,$runtimeImage]}' \

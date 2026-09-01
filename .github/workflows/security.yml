@@ -2,7 +2,7 @@ name: Security
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, 'codex/**' ]
   pull_request:
     branches: [ main ]
   schedule:
@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ java-kotlin, javascript-typescript ]
+        language: [ java-kotlin, javascript-typescript, python ]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: github/codeql-action/init@988661ebb5e81487b3fb31b2185d2856c0a10679 # v4
@@ -48,6 +48,19 @@ jobs:
           node-version: '20.19.5'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Set up Python 3.13
+        if: matrix.language == 'python'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.7'
+          cache: pip
+          cache-dependency-path: research-python/requirements.lock
+      - name: Build Python research database
+        if: matrix.language == 'python'
+        working-directory: research-python
+        run: |
+          python -m pip install -r requirements.lock
+          PYTHONPATH=src python -m unittest discover -s tests -v
       - name: Build JavaScript database
         if: matrix.language == 'javascript-typescript'
         working-directory: frontend

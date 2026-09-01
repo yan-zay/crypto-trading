@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-research-worker"
+version = "0.1.0"
+description = "Isolated, credential-free research worker for immutable market manifests"
+requires-python = ">=3.11"
+dependencies = [
+  "pyarrow>=18",
+  "polars>=1.20"
+]
+
+[project.scripts]
+crypto-research-worker = "crypto_research_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
