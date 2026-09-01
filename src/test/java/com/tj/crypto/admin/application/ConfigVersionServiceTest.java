@@ -67,6 +67,11 @@ class ConfigVersionServiceTest {
             String versionId = invocation.getArgument(0);
             return Optional.ofNullable(db.get(versionId));
         });
+        when(configVersionMapper.selectByVersionIdForUpdate(any())).thenAnswer(invocation -> {
+            String versionId = invocation.getArgument(0);
+            return db.get(versionId);
+        });
+        when(configVersionMapper.lockTypeAndKey(any(), any())).thenReturn(List.of());
 
         // selectActiveByTypeAndKey: 查找 ACTIVE 状态
         when(configVersionMapper.selectActiveByTypeAndKey(any(), any())).thenAnswer(invocation -> {
@@ -308,6 +313,34 @@ class ConfigVersionServiceTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("different config");
         }
+
+        @Test
+        @DisplayName("不能将从未发布的草稿或已验证版本作为回滚目标")
+        void shouldRejectRollbackToNeverPublishedTarget() {
+            ConfigVersion old = service.createDraft(
+                    ConfigType.STRATEGY, "MacdCross", "{\"v\":1}", "old");
+            ConfigVersion current = service.createDraft(
+                    ConfigType.STRATEGY, "MacdCross", "{\"v\":2}", "current");
+            service.validate(current.versionId());
+            service.publish(current.versionId(), "admin");
+
+            assertThatThrownBy(() -> service.rollback(current.versionId(), old.versionId()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("previously published");
+        }
+    }
+
+    @Test
+    @DisplayName("发布前重新计算 checksum，数据库内容被改写时 fail-closed")
+    void shouldRejectTamperedPayloadBeforePublish() {
+        ConfigVersion draft = service.createDraft(
+                ConfigType.STRATEGY, "MacdCross", "{\"v\":1}", "v1");
+        service.validate(draft.versionId());
+        db.get(draft.versionId()).setContentJson("{\"v\":999}");
+
+        assertThatThrownBy(() -> service.publish(draft.versionId(), "admin"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("checksum mismatch");
     }
 
     @Nested

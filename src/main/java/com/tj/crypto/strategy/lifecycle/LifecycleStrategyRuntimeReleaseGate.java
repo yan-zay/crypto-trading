@@ -1,5 +1,6 @@
 package com.tj.crypto.strategy.lifecycle;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -13,8 +14,9 @@ final class LifecycleStrategyRuntimeReleaseGate implements StrategyRuntimeReleas
     private final StrategyPromotionGate promotionGate;
     private final Clock clock;
 
+    @Autowired
     LifecycleStrategyRuntimeReleaseGate(StrategyLifecycleStore store,
-                                        StrategyPromotionGate promotionGate) {
+                                         StrategyPromotionGate promotionGate) {
         this(store, promotionGate, Clock.systemUTC());
     }
 

@@ -22,6 +22,8 @@ CREATE TABLE market_data_dataset (
 CREATE TABLE market_data_object_catalog (
     object_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     storage_uri VARCHAR(1000) NOT NULL,
+    storage_uri_sha256 BINARY(32)
+        GENERATED ALWAYS AS (UNHEX(SHA2(storage_uri, 256))) STORED,
     content_type VARCHAR(100) NOT NULL,
     byte_size BIGINT NOT NULL,
     encryption_key_ref VARCHAR(255) NULL,
@@ -29,7 +31,7 @@ CREATE TABLE market_data_object_catalog (
     verification_state VARCHAR(20) NOT NULL DEFAULT 'REGISTERED',
     verified_at_ms BIGINT NULL,
     created_at_ms BIGINT NOT NULL,
-    UNIQUE KEY uk_market_object_uri (storage_uri),
+    UNIQUE KEY uk_market_object_uri (storage_uri_sha256),
     CONSTRAINT chk_market_object_size CHECK (byte_size > 0),
     CONSTRAINT chk_market_object_sha CHECK (object_sha256 REGEXP '^[0-9a-f]{64}$'),
     CONSTRAINT chk_market_object_uri CHECK (CHAR_LENGTH(TRIM(storage_uri)) > 0),

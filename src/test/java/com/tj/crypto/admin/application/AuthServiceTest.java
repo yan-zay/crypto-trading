@@ -7,11 +7,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Date;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -37,6 +39,31 @@ class AuthServiceTest {
         assertThatThrownBy(() -> new AuthService(userMapper, "test-secret-key", 3_600_001))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("TTL");
+    }
+
+    @Test
+    @DisplayName("生产启动允许保留已禁用的历史默认账户")
+    void shouldAllowDisabledLegacyDefaultAccountInProduction() {
+        AuthService production = new AuthService(userMapper, "s".repeat(64));
+        ReflectionTestUtils.setField(production, "activeProfiles", "pro");
+        when(userMapper.selectByUsername("admin")).thenReturn(Optional.of(
+                createUser(1L, "admin", "admin123", "ADMIN", false)));
+        when(userMapper.selectByUsername("viewer")).thenReturn(Optional.empty());
+
+        assertThatCode(production::validateConfig).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("生产启动仍拒绝启用状态的默认账户")
+    void shouldRejectEnabledDefaultAccountInProduction() {
+        AuthService production = new AuthService(userMapper, "s".repeat(64));
+        ReflectionTestUtils.setField(production, "activeProfiles", "pro");
+        when(userMapper.selectByUsername("admin")).thenReturn(Optional.of(
+                createUser(1L, "admin", "admin123", "ADMIN", true)));
+
+        assertThatThrownBy(production::validateConfig)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Default admin password");
     }
 
     private UserDO createUser(long id, String username, String rawPassword, String role, boolean enabled) {

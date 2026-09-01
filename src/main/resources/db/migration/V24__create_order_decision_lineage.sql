@@ -104,7 +104,7 @@ CREATE TABLE order_decision_envelope (
         AND archive_manifest_sha256 REGEXP '^[0-9a-f]{64}$'
         AND factor_snapshot_sha256 REGEXP '^[0-9a-f]{64}$'
         AND signal_sha256 REGEXP '^[0-9a-f]{64}$'
-        AND BINARY strategy_artifact_sha256 REGEXP '^[0-9a-f]{64}$'
+        AND REGEXP_LIKE(strategy_artifact_sha256, '^[0-9a-f]{64}$', 'c')
         AND governance_subject_sha256 REGEXP '^[0-9a-f]{64}$'
         AND build_artifact_sha256 REGEXP '^[0-9a-f]{64}$'
         AND container_image_sha256 REGEXP '^[0-9a-f]{64}$'

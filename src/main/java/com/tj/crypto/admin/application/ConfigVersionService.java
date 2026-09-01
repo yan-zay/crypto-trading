@@ -35,16 +35,19 @@ public class ConfigVersionService {
     private final AuditLogMapper auditLogMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final ConfigPayloadValidator payloadValidator;
+    private final AuditService auditService;
 
     @org.springframework.beans.factory.annotation.Autowired
     public ConfigVersionService(ConfigVersionMapper configVersionMapper,
                                 AuditLogMapper auditLogMapper,
                                 ApplicationEventPublisher eventPublisher,
-                                ConfigPayloadValidator payloadValidator) {
+                                ConfigPayloadValidator payloadValidator,
+                                AuditService auditService) {
         this.configVersionMapper = configVersionMapper;
         this.auditLogMapper = auditLogMapper;
         this.eventPublisher = eventPublisher;
         this.payloadValidator = payloadValidator;
+        this.auditService = auditService;
     }
 
     /** Compatibility constructor for isolated unit tests. */
@@ -52,7 +55,7 @@ public class ConfigVersionService {
                                 AuditLogMapper auditLogMapper,
                                 ApplicationEventPublisher eventPublisher) {
         this(configVersionMapper, auditLogMapper, eventPublisher,
-                new ConfigPayloadValidator(new ObjectMapper()));
+                new ConfigPayloadValidator(new ObjectMapper()), null);
     }
 
     /**
@@ -87,8 +90,9 @@ public class ConfigVersionService {
      */
     @Transactional
     public ConfigVersion validate(String versionId) {
-        ConfigVersionDO current = getVersionOrThrow(versionId);
+        ConfigVersionDO current = getVersionForUpdateOrThrow(versionId);
         assertStatus(current, ConfigStatus.DRAFT, "validate");
+        verifyChecksum(current);
         payloadValidator.validate(ConfigType.fromCode(current.getConfigType()), current.getContentJson());
 
         current.setStatus(ConfigStatus.VALIDATED.getCode());
@@ -110,8 +114,12 @@ public class ConfigVersionService {
      */
     @Transactional
     public ConfigVersion publish(String versionId, String publishedBy) {
-        ConfigVersionDO current = getVersionOrThrow(versionId);
+        ConfigVersionDO candidate = getVersionOrThrow(versionId);
+        configVersionMapper.lockTypeAndKey(candidate.getConfigType(), candidate.getConfigKey());
+        ConfigVersionDO current = getVersionForUpdateOrThrow(versionId);
         assertStatus(current, ConfigStatus.VALIDATED, "publish");
+        verifyChecksum(current);
+        payloadValidator.validate(ConfigType.fromCode(current.getConfigType()), current.getContentJson());
 
         // 归档旧的 ACTIVE 版本
         configVersionMapper.selectActiveByTypeAndKey(current.getConfigType(), current.getConfigKey())
@@ -151,28 +159,44 @@ public class ConfigVersionService {
      */
     @Transactional
     public ConfigVersion rollback(String currentVersionId, String targetVersionId) {
-        ConfigVersionDO current = getVersionOrThrow(currentVersionId);
-        ConfigVersionDO target = getVersionOrThrow(targetVersionId);
+        ConfigVersionDO requestedCurrent = getVersionOrThrow(currentVersionId);
+        ConfigVersionDO requestedTarget = getVersionOrThrow(targetVersionId);
 
-        if (!current.getConfigType().equals(target.getConfigType())
-                || !current.getConfigKey().equals(target.getConfigKey())) {
+        if (!requestedCurrent.getConfigType().equals(requestedTarget.getConfigType())
+                || !requestedCurrent.getConfigKey().equals(requestedTarget.getConfigKey())) {
             throw new IllegalArgumentException(
                     "Target version belongs to a different config: current=%s:%s, target=%s:%s"
-                            .formatted(current.getConfigType(), current.getConfigKey(),
-                                    target.getConfigType(), target.getConfigKey()));
+                            .formatted(requestedCurrent.getConfigType(), requestedCurrent.getConfigKey(),
+                                    requestedTarget.getConfigType(), requestedTarget.getConfigKey()));
         }
+        configVersionMapper.lockTypeAndKey(requestedCurrent.getConfigType(), requestedCurrent.getConfigKey());
+        ConfigVersionDO current = getVersionForUpdateOrThrow(currentVersionId);
+        ConfigVersionDO target = getVersionForUpdateOrThrow(targetVersionId);
+
+        ConfigVersionDO active = configVersionMapper.selectActiveByTypeAndKey(
+                current.getConfigType(), current.getConfigKey()).orElseThrow(
+                () -> new IllegalStateException("No active config exists for rollback"));
+        if (!currentVersionId.equals(active.getVersionId())) {
+            throw new IllegalArgumentException("currentVersionId is not the active config version");
+        }
+        ConfigStatus targetStatus = ConfigStatus.fromCode(target.getStatus());
+        if (targetStatus != ConfigStatus.ARCHIVED && targetStatus != ConfigStatus.ROLLED_BACK) {
+            throw new IllegalArgumentException(
+                    "Rollback target must be a previously published archived/rolled-back version");
+        }
+        verifyChecksum(current);
+        verifyChecksum(target);
+        payloadValidator.validate(ConfigType.fromCode(target.getConfigType()), target.getContentJson());
 
         // 回滚当前 ACTIVE 版本
-        configVersionMapper.selectActiveByTypeAndKey(current.getConfigType(), current.getConfigKey())
-                .ifPresent(active -> {
-                    active.setStatus(ConfigStatus.ROLLED_BACK.getCode());
-                    active.setUpdateTime(new Date());
-                    configVersionMapper.updateById(active);
-                    log.info("Rolled back active version: versionId={}", active.getVersionId());
-                });
+        active.setStatus(ConfigStatus.ROLLED_BACK.getCode());
+        active.setUpdateTime(new Date());
+        configVersionMapper.updateById(active);
+        log.info("Rolled back active version: versionId={}", active.getVersionId());
 
         // 重新激活目标版本
         target.setStatus(ConfigStatus.ACTIVE.getCode());
+        target.setRollbackFromVersion(currentVersionId);
         target.setUpdateTime(new Date());
         configVersionMapper.updateById(target);
 
@@ -231,6 +255,20 @@ public class ConfigVersionService {
                 .orElseThrow(() -> new IllegalArgumentException("Config version not found: " + versionId));
     }
 
+    private ConfigVersionDO getVersionForUpdateOrThrow(String versionId) {
+        ConfigVersionDO value = configVersionMapper.selectByVersionIdForUpdate(versionId);
+        if (value == null) throw new IllegalArgumentException("Config version not found: " + versionId);
+        return value;
+    }
+
+    private void verifyChecksum(ConfigVersionDO version) {
+        String actual = computeChecksum(version.getContentJson());
+        if (version.getChecksum() == null || !version.getChecksum().equals(actual)) {
+            throw new IllegalStateException(
+                    "Config payload checksum mismatch: versionId=" + version.getVersionId());
+        }
+    }
+
     private void assertStatus(ConfigVersionDO version, ConfigStatus expected, String operation) {
         if (!expected.getCode().equals(version.getStatus())) {
             throw new IllegalArgumentException(
@@ -273,6 +311,13 @@ public class ConfigVersionService {
 
     private void recordAudit(String operationType, ConfigType configType, String configKey,
                              String versionId, String operator, String detail) {
+        if (auditService != null) {
+            auditService.append(new AuditRecord(null, null, operationType,
+                    "CONFIG_VERSION", configType.getCode() + ":" + configKey,
+                    configType.getCode(), configKey, versionId, operator,
+                    "SUCCESS", null, null, new Date(), detail));
+            return;
+        }
         AuditLogDO auditLog = new AuditLogDO();
         auditLog.setOperationType(operationType);
         auditLog.setConfigType(configType.getCode());

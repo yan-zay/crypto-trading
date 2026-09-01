@@ -1,6 +1,8 @@
 package com.tj.crypto.admin.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.tj.crypto.admin.domain.ConfigVersionDO;
 import com.tj.crypto.mapper.BaseMapperX;
@@ -22,7 +24,7 @@ public interface ConfigVersionMapper extends BaseMapperX<ConfigVersionDO> {
         ConfigVersionDO result = selectOne(new LambdaQueryWrapper<ConfigVersionDO>()
                 .eq(ConfigVersionDO::getConfigType, configType)
                 .eq(ConfigVersionDO::getConfigKey, configKey)
-                .eq(ConfigVersionDO::getStatus, "ACTIVE")
+                .eq(ConfigVersionDO::getStatus, "active")
                 .orderByDesc(ConfigVersionDO::getUpdateTime)
                 .last("LIMIT 1"));
         return Optional.ofNullable(result);
@@ -36,6 +38,17 @@ public interface ConfigVersionMapper extends BaseMapperX<ConfigVersionDO> {
                 .eq(ConfigVersionDO::getVersionId, versionId));
         return Optional.ofNullable(result);
     }
+
+    @Select("SELECT * FROM admin_config_version WHERE version_id=#{versionId} FOR UPDATE")
+    ConfigVersionDO selectByVersionIdForUpdate(@Param("versionId") String versionId);
+
+    @Select("""
+            SELECT id FROM admin_config_version
+            WHERE config_type=#{configType} AND config_key=#{configKey}
+            ORDER BY id FOR UPDATE
+            """)
+    List<Long> lockTypeAndKey(@Param("configType") String configType,
+                              @Param("configKey") String configKey);
 
     /**
      * 查询指定类型和键的所有版本（按创建时间升序）。
@@ -53,7 +66,7 @@ public interface ConfigVersionMapper extends BaseMapperX<ConfigVersionDO> {
     default List<ConfigVersionDO> selectActiveByType(String configType) {
         return selectList(new LambdaQueryWrapper<ConfigVersionDO>()
                 .eq(ConfigVersionDO::getConfigType, configType)
-                .eq(ConfigVersionDO::getStatus, "ACTIVE"));
+                .eq(ConfigVersionDO::getStatus, "active"));
     }
 
     /**
@@ -61,7 +74,7 @@ public interface ConfigVersionMapper extends BaseMapperX<ConfigVersionDO> {
      */
     default List<ConfigVersionDO> selectAllActive() {
         return selectList(new LambdaQueryWrapper<ConfigVersionDO>()
-                .eq(ConfigVersionDO::getStatus, "ACTIVE"));
+                .eq(ConfigVersionDO::getStatus, "active"));
     }
 
     /**

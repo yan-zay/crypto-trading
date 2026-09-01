@@ -176,7 +176,7 @@ class LongTermOrderLineageMigrationContractTest {
             while (columns.find()) {
                 String column = columns.group(1).toLowerCase(Locale.ROOT);
                 String required = column.equals("strategy_artifact_sha256")
-                        ? "binary" + column + "regexp'^[0-9a-f]{64}$'"
+                        ? "regexp_like(" + column + ",'^[0-9a-f]{64}$','c')"
                         : column + "regexp'^[0-9a-f]{64}$'";
                 assertThat(compact(statement)).as("lowercase digest constraint for %s", column)
                         .contains(required);

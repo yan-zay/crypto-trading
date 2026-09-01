@@ -73,13 +73,15 @@ public class AuthService {
         }
         if (production) {
             userMapper.selectByUsername("admin").ifPresent(user -> {
-                if (BCrypt.checkpw("admin123", user.getPasswordHash())) {
+                if (Boolean.TRUE.equals(user.getEnabled())
+                        && BCrypt.checkpw("admin123", user.getPasswordHash())) {
                     throw new IllegalStateException(
                             "Default admin password is forbidden in production");
                 }
             });
             userMapper.selectByUsername("viewer").ifPresent(user -> {
-                if (BCrypt.checkpw("viewer123", user.getPasswordHash())) {
+                if (Boolean.TRUE.equals(user.getEnabled())
+                        && BCrypt.checkpw("viewer123", user.getPasswordHash())) {
                     throw new IllegalStateException(
                             "Default viewer password is forbidden in production");
                 }

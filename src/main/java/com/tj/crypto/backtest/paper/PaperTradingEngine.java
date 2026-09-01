@@ -7,7 +7,6 @@ import com.tj.crypto.execution.model.OrderType;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.risk.RiskProperties;
 import com.tj.crypto.strategy.core.SignalEvent;
-import com.tj.crypto.strategy.core.SignalListener;
 import com.tj.crypto.strategy.core.SignalType;
 import com.tj.crypto.trading.instrument.InstrumentMetadata;
 import com.tj.crypto.trading.instrument.InstrumentMetadataService;
@@ -22,6 +21,11 @@ import com.tj.crypto.trading.paper.PaperOrderService;
 import com.tj.crypto.trading.paper.PaperTradingQueryService;
 import com.tj.crypto.trading.paper.persistence.PaperMarkPriceDO;
 import com.tj.crypto.trading.paper.persistence.PaperPositionDO;
+import com.tj.crypto.trading.pipeline.DeterministicTargetPipeline;
+import com.tj.crypto.trading.pipeline.OrderIntent;
+import com.tj.crypto.trading.pipeline.PortfolioTarget;
+import com.tj.crypto.trading.pipeline.PositionSnapshot;
+import com.tj.crypto.trading.pipeline.RiskAdjustedTarget;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -30,6 +34,10 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.UUID;
 
 /**
@@ -38,7 +46,7 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
-public class PaperTradingEngine implements SignalListener {
+public class PaperTradingEngine {
     private static final MathContext MC = new MathContext(18, RoundingMode.HALF_UP);
     private final MarketEventBus eventBus;
     private final PaperAccountLifecycleService lifecycleService;
@@ -49,6 +57,7 @@ public class PaperTradingEngine implements SignalListener {
     private final PaperTradingQueryService queryService;
     private final InstrumentMetadataService metadataService;
     private final RiskProperties riskProperties;
+    private final DeterministicTargetPipeline targetPipeline = new DeterministicTargetPipeline();
 
     public PaperTradingEngine(MarketEventBus eventBus,
                               PaperAccountLifecycleService lifecycleService,
@@ -85,34 +94,32 @@ public class PaperTradingEngine implements SignalListener {
         lifecycleService.stop(snapshot.account().getAccountId(), null);
     }
 
-    @Override
-    public void onSignal(SignalEvent signal) {
+    /** Called by the durable signal transaction after the signal row has been inserted. */
+    public void executeSignal(SignalEvent signal) {
         if (signal.type() == SignalType.HOLD) return;
         PaperAccountSnapshot account = queryService.snapshot(null);
         if (!account.running()) return;
-        try {
-            PaperMarkPriceDO mark = marketDataService.require(signal.instrument().exchange(),
-                    signal.instrument().marketType(), signal.instrument().symbol());
-            InstrumentMetadata metadata = metadataService.require(signal.instrument(),
-                    Math.max(mark.getEventTimeMs(), System.currentTimeMillis()));
-            TradeSide side = signal.type() == SignalType.BUY ? TradeSide.BUY : TradeSide.SELL;
-            BigDecimal quantity = signalQuantity(signal, account, mark, metadata, side);
-            if (quantity.signum() <= 0) return;
-            String idempotencyKey = UUID.nameUUIDFromBytes((signal.strategyName() + ":"
-                    + signal.instrument().id().value() + ":" + signal.type() + ":"
-                    + signal.timestamp()).getBytes(StandardCharsets.UTF_8)).toString();
-            Order order = orderService.place(new PaperOrderRequest(
-                    account.account().getAccountId(), idempotencyKey, signal.strategyName(),
-                    signal.instrument().exchange(), signal.instrument().marketType(),
-                    signal.instrument().symbol(), side, OrderType.MARKET, quantity,
-                    null, 1, false, idempotencyKey));
-            log.info("[PAPER] strategy={} order={} status={} filled={}/{}",
-                    signal.strategyName(), order.orderId(), order.status(),
-                    order.filledQuantity(), order.quantity());
-        } catch (RuntimeException e) {
-            log.error("Paper signal execution failed: strategy={}, instrument={}",
-                    signal.strategyName(), signal.instrument().id(), e);
-        }
+        PaperMarkPriceDO mark = marketDataService.require(signal.instrument().exchange(),
+                signal.instrument().marketType(), signal.instrument().symbol());
+        InstrumentMetadata metadata = metadataService.require(signal.instrument(),
+                Math.max(mark.getEventTimeMs(), System.currentTimeMillis()));
+        TradeSide side = signal.type() == SignalType.BUY ? TradeSide.BUY : TradeSide.SELL;
+        BigDecimal quantity = signalQuantity(signal, account, mark, metadata, side);
+        if (quantity.signum() <= 0) return;
+        OrderIntent intent = planIntent(signal, account, position(account, signal), mark,
+                quantity, side, closes(position(account, signal), side));
+        if (intent == null) return;
+        String idempotencyKey = UUID.nameUUIDFromBytes((signal.strategyName() + ":"
+                + signal.instrument().id().value() + ":" + signal.type() + ":"
+                + signal.timestamp()).getBytes(StandardCharsets.UTF_8)).toString();
+        Order order = orderService.place(new PaperOrderRequest(
+                account.account().getAccountId(), idempotencyKey, signal.strategyName(),
+                signal.instrument().exchange(), signal.instrument().marketType(),
+                signal.instrument().symbol(), intent.side(), OrderType.MARKET, intent.quantity(),
+                null, 1, intent.reduceOnly(), idempotencyKey));
+        log.info("[PAPER] strategy={} order={} status={} filled={}/{}",
+                signal.strategyName(), order.orderId(), order.status(),
+                order.filledQuantity(), order.quantity());
     }
 
     public boolean isRunning() {
@@ -152,5 +159,58 @@ public class PaperTradingEngine implements SignalListener {
                 .divide(BigDecimal.valueOf(100), MC).multiply(confidence, MC);
         return metadata.alignQuantity(budget.divide(mark.getPrice(), MC)
                 .divide(metadata.contractMultiplier(), MC));
+    }
+
+    private OrderIntent planIntent(SignalEvent signal, PaperAccountSnapshot account,
+                                   PaperPositionDO position, PaperMarkPriceDO mark,
+                                   BigDecimal quantity, TradeSide side, boolean closes) {
+        BigDecimal existing = position == null ? BigDecimal.ZERO
+                : "SHORT".equals(position.getSide()) ? position.getQuantity().negate()
+                : position.getQuantity();
+        BigDecimal desired = closes ? BigDecimal.ZERO
+                : existing.add(side == TradeSide.BUY ? quantity : quantity.negate());
+        Instant now = Instant.ofEpochMilli(signal.timestamp());
+        Instant expires = now.plusMillis(Math.max(1_000, riskProperties.getAccountSnapshotMaxAgeMs()));
+        String sourceArtifact = validHash(signal.strategyArtifactSha256())
+                ? signal.strategyArtifactSha256() : sha256("paper-signal:" + signal.strategyName()
+                + ":" + signal.timestamp() + ":" + signal.instrument().id().value());
+        String riskPolicy = sha256("paper-risk-v1:" + riskProperties.getMaxSizePct()
+                + ":" + riskProperties.getMaxLossPerTradePct() + ":"
+                + riskProperties.getMaxDailyLossPct());
+        String positionManifest = sha256("paper-position-v1:"
+                + account.account().getAccountId() + ":" + signal.instrument().id().value()
+                + ":" + existing.stripTrailingZeros().toPlainString() + ":" + mark.getEventTimeMs());
+        PortfolioTarget target = new PortfolioTarget(signal.strategyName(), signal.instrument().id(),
+                desired, "BASE", "paper-risk-v1", sourceArtifact, now, expires);
+        PositionSnapshot snapshot = new PositionSnapshot(signal.instrument().id(), existing,
+                "BASE", positionManifest, now, expires);
+        return targetPipeline.plan(new RiskAdjustedTarget(target, quantity, riskPolicy),
+                snapshot, mark.getPrice(), now);
+    }
+
+    private PaperPositionDO position(PaperAccountSnapshot account, SignalEvent signal) {
+        return account.positions().stream()
+                .filter(p -> p.getExchange().equals(signal.instrument().exchange().name())
+                        && p.getMarketType().equals(signal.instrument().marketType().name())
+                        && p.getSymbol().equals(signal.instrument().symbol()))
+                .findFirst().orElse(null);
+    }
+
+    private boolean closes(PaperPositionDO position, TradeSide side) {
+        return position != null && ((side == TradeSide.BUY && "SHORT".equals(position.getSide()))
+                || (side == TradeSide.SELL && "LONG".equals(position.getSide())));
+    }
+
+    private boolean validHash(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
     }
 }
