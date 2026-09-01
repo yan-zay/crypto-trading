@@ -2,6 +2,7 @@ package com.tj.crypto.strategy.core;
 
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.strategy.lifecycle.StrategyRuntimeRelease;
+import com.tj.crypto.strategy.lifecycle.StrategyLifecycleStage;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -28,14 +29,15 @@ public record SignalEvent(
         long timestamp,
         String releaseAssignmentId,
         String strategyArtifactSha256,
-        String governanceSubjectSha256
+        String governanceSubjectSha256,
+        StrategyLifecycleStage releaseStage
 ) {
     /** Backtest and isolated strategy compatibility; managed runtime enriches before collection. */
     public SignalEvent(String strategyName, Instrument instrument, SignalType type,
                        BigDecimal confidence, String reason,
                        Map<String, BigDecimal> factorSnapshot, long timestamp) {
         this(strategyName, instrument, type, confidence, reason, factorSnapshot, timestamp,
-                null, null, null);
+                null, null, null, null);
     }
 
     public SignalEvent withRuntimeRelease(StrategyRuntimeRelease release) {
@@ -53,11 +55,11 @@ public record SignalEvent(
         }
         return new SignalEvent(strategyName, instrument, type, confidence, reason,
                 factorSnapshot, timestamp, release.assignmentId(), release.artifactSha256(),
-                release.governanceSubjectSha256());
+                release.governanceSubjectSha256(), release.stage());
     }
 
     public boolean hasRuntimeReleaseLineage() {
         return releaseAssignmentId != null && strategyArtifactSha256 != null
-                && governanceSubjectSha256 != null;
+                && governanceSubjectSha256 != null && releaseStage != null;
     }
 }

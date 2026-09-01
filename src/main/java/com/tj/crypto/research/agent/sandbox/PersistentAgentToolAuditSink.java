@@ -26,6 +26,8 @@ public class PersistentAgentToolAuditSink implements AgentToolAuditSink {
         target.setApprovalReference(event.approvalReference());
         target.setModelVersion(event.modelVersion());
         target.setPromptVersion(event.promptVersion());
+        target.setModelOutputSha256(event.modelOutputSha256());
+        target.setEvalReportSha256(event.evalReportSha256());
         target.setOccurredAtMs(event.occurredAt().toEpochMilli());
         target.setElapsedMs(event.elapsedMs());
         target.setReasonCode(event.reasonCode());

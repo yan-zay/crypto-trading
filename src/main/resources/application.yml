@@ -46,6 +46,19 @@ id:
 
 # Coinglass API 配置
 crypto:
+  agent:
+    model:
+      enabled: ${AGENT_MODEL_ENABLED:false}
+      endpoint: ${AGENT_MODEL_ENDPOINT:}
+      bearer-token: ${AGENT_MODEL_BEARER_TOKEN:}
+      model-version: ${AGENT_MODEL_VERSION:}
+      prompt-version: ${AGENT_PROMPT_VERSION:}
+      allowed-hosts: ${AGENT_MODEL_ALLOWED_HOSTS:}
+      call-timeout-ms: ${AGENT_MODEL_CALL_TIMEOUT_MS:30000}
+      max-response-bytes: ${AGENT_MODEL_MAX_RESPONSE_BYTES:262144}
+      eval-report-path: ${AGENT_EVAL_REPORT_PATH:}
+      eval-report-sha256: ${AGENT_EVAL_REPORT_SHA256:}
+      max-eval-age-ms: ${AGENT_EVAL_MAX_AGE_MS:604800000}
   marketdata:
     realtime-journal-root: ${MARKETDATA_REALTIME_JOURNAL_ROOT:target/market-journal}
   auth:

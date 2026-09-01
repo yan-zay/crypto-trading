@@ -23,6 +23,8 @@ public class SignalEventDO extends PhysicsTimeBaseDO {
     private String releaseAssignmentId;
     private String strategyArtifactSha256;
     private String governanceSubjectSha256;
+    private String lifecycleStage;
+    private String deliveryTarget;
     private String exchange;
     private String marketType;
     private String symbol;

@@ -115,6 +115,20 @@ public class AgentResearchSandboxService {
     }
 
     @Transactional
+    public FalsifiableHypothesis generateModelHypothesis(
+            String sessionId, FalsifiableHypothesisDraft draft, AgentAuditContext modelAudit) {
+        if (modelAudit == null || modelAudit.modelVersion() == null
+                || modelAudit.promptVersion() == null
+                || modelAudit.modelOutputSha256() == null
+                || modelAudit.evalReportSha256() == null) {
+            throw new IllegalArgumentException("complete model audit context is required");
+        }
+        return invoke(sessionId, AgentToolName.GENERATE_FALSIFIABLE_HYPOTHESIS,
+                modelAudit, ignored -> artifactFactory.hypothesis(draft, clock.instant()),
+                ignored -> { }, FalsifiableHypothesis::hypothesisId);
+    }
+
+    @Transactional
     public ExperimentPlan generateExperimentPlan(String sessionId, ExperimentPlanDraft draft) {
         return invoke(sessionId, AgentToolName.GENERATE_EXPERIMENT_PLAN,
                 new AgentAuditContext(sha256(String.valueOf(draft)), null,
@@ -324,6 +338,7 @@ public class AgentResearchSandboxService {
         return new AgentToolAuditEvent(nextId(), callId, sessionId, level, operation, outcome,
                 operator, policyEngine.policy().policyVersion(), auditContext.inputSha256(),
                 auditContext.approvalReference(), auditContext.modelVersion(), auditContext.promptVersion(),
+                auditContext.modelOutputSha256(), auditContext.evalReportSha256(),
                 clock.instant(), elapsedMs,
                 reasonCode, resultReference, detail);
     }

@@ -16,6 +16,10 @@ public class BacktestRunDO {
     private String runId;
     private String strategyName;
     private String strategyConfigJson;
+    private String researchRegistrationId;
+    private String researchRegistrationSha256;
+    private String researchTrialId;
+    private String researchProvenanceSha256;
     private String exchange;
     private String marketType;
     private String symbol;

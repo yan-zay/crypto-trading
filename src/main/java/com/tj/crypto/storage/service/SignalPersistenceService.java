@@ -6,6 +6,7 @@ import com.tj.crypto.storage.mapper.SignalEventMapper;
 import com.tj.crypto.strategy.core.SignalEvent;
 import com.tj.crypto.strategy.core.SignalListener;
 import com.tj.crypto.backtest.paper.PaperTradingEngine;
+import com.tj.crypto.strategy.lifecycle.StrategyLifecycleStage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,11 +43,22 @@ public class SignalPersistenceService implements SignalListener {
 
     private void deliver(SignalEvent signal) {
         SignalEventDO stored = SignalEventConverter.toDO(signal);
+        SignalDeliveryTarget target = deliveryTarget(signal);
+        stored.setDeliveryTarget(target.name());
         if (signalEventMapper.insert(stored) != 1 || stored.getId() == null) {
             throw new IllegalStateException("Signal command was not durably inserted");
         }
-        paperTradingEngine.executeSignal(signal);
-        log.debug("Durably delivered signal: id={} strategy={} type={} instrument={}",
-                stored.getId(), signal.strategyName(), signal.type(), signal.instrument().symbol());
+        if (target == SignalDeliveryTarget.PAPER) {
+            paperTradingEngine.executeSignal(signal);
+        }
+        log.debug("Durably delivered signal: id={} target={} strategy={} type={} instrument={}",
+                stored.getId(), target, signal.strategyName(), signal.type(),
+                signal.instrument().symbol());
+    }
+
+    private SignalDeliveryTarget deliveryTarget(SignalEvent signal) {
+        if (!signal.hasRuntimeReleaseLineage()) return SignalDeliveryTarget.PAPER;
+        return signal.releaseStage() == StrategyLifecycleStage.SHADOW
+                ? SignalDeliveryTarget.SHADOW : SignalDeliveryTarget.PAPER;
     }
 }

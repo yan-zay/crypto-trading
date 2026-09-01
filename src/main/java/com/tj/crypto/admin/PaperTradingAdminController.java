@@ -13,6 +13,7 @@ import com.tj.crypto.trading.paper.PaperOrderService;
 import com.tj.crypto.trading.paper.PaperTradingQueryService;
 import com.tj.crypto.trading.paper.persistence.PaperAccountDO;
 import com.tj.crypto.trading.paper.persistence.PaperMarkPriceDO;
+import com.tj.crypto.portfolio.runtime.PaperPortfolioSnapshotService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -41,6 +42,7 @@ public class PaperTradingAdminController {
     private final PaperOrderService orderService;
     private final PaperFundingService fundingService;
     private final AuditService auditService;
+    private final PaperPortfolioSnapshotService portfolioSnapshotService;
 
     @PostMapping("/start")
     @Transactional
@@ -169,6 +171,12 @@ public class PaperTradingAdminController {
     @GetMapping("/marks")
     public Object marks() {
         return queryService.marks();
+    }
+
+    @GetMapping("/portfolio-snapshot")
+    public Object portfolioSnapshot(@RequestParam(required = false) String accountId,
+                                    @RequestParam(defaultValue = "300000") long maxMarkAgeMs) {
+        return portfolioSnapshotService.snapshot(accountId, maxMarkAgeMs);
     }
 
     @PostMapping("/funding")

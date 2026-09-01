@@ -3,6 +3,8 @@ package com.tj.crypto.strategy.core;
 import com.tj.crypto.strategy.config.StrategyProperties;
 import com.tj.crypto.strategy.lifecycle.StrategyRuntimeRelease;
 import com.tj.crypto.strategy.lifecycle.StrategyRuntimeReleaseGate;
+import com.tj.crypto.research.agent.sandbox.AgentEvaluationActivation;
+import com.tj.crypto.common.domain.InstrumentId;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -30,6 +32,8 @@ public class StrategyManager {
 
     private final Map<String, Strategy> strategyMap = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Boolean> enabledMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AgentEvaluationActivation> agentEvaluationScopes =
+            new ConcurrentHashMap<>();
     private final StrategyRuntimeReleaseGate runtimeReleaseGate;
 
     /**
@@ -109,6 +113,7 @@ public class StrategyManager {
             return false;
         }
         enabledMap.put(name, false);
+        agentEvaluationScopes.remove(name);
         log.info("Strategy '{}' disabled", name);
         return true;
     }
@@ -149,6 +154,37 @@ public class StrategyManager {
     public boolean isStrategyExecutable(String name) {
         return enabledMap.getOrDefault(name, false)
                 && runtimeReleaseGate.resolve(name).isPresent();
+    }
+
+    /** Replaces the complete durable L2 activation projection after commit or periodic refresh. */
+    public synchronized void replaceAgentEvaluationScopes(List<AgentEvaluationActivation> activations) {
+        Map<String, AgentEvaluationActivation> replacement = new java.util.HashMap<>();
+        for (AgentEvaluationActivation activation : activations) {
+            AgentEvaluationActivation prior = replacement.putIfAbsent(
+                    activation.strategyName(), activation);
+            if (prior != null) {
+                throw new IllegalStateException(
+                        "Multiple active Agent proposals target strategy " + activation.strategyName());
+            }
+        }
+        java.util.Set<String> expiredOrRevoked = new java.util.HashSet<>(agentEvaluationScopes.keySet());
+        expiredOrRevoked.removeAll(replacement.keySet());
+        expiredOrRevoked.forEach(name -> enabledMap.put(name, false));
+        agentEvaluationScopes.clear();
+        agentEvaluationScopes.putAll(replacement);
+        replacement.keySet().forEach(this::enableStrategy);
+    }
+
+    public boolean allowsEvaluationEvent(String strategyName, InstrumentId instrumentId,
+                                         java.time.Instant eventTime) {
+        AgentEvaluationActivation activation = agentEvaluationScopes.get(strategyName);
+        if (activation == null) return true;
+        if (eventTime == null || !eventTime.isBefore(activation.expiresAt())) return false;
+        return activation.instrumentScope().contains(instrumentId.value());
+    }
+
+    public boolean hasAgentEvaluationScope(String strategyName) {
+        return agentEvaluationScopes.containsKey(strategyName);
     }
 
     /**

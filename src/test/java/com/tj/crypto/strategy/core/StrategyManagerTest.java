@@ -5,6 +5,11 @@ import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.strategy.config.StrategyProperties;
 import com.tj.crypto.strategy.lifecycle.StrategyRuntimeReleaseGate;
+import com.tj.crypto.research.agent.policy.AgentProposalTarget;
+import com.tj.crypto.research.agent.sandbox.AgentEvaluationActivation;
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.InstrumentId;
+import com.tj.crypto.common.domain.MarketType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -254,5 +260,27 @@ class StrategyManagerTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Duplicate strategy name")
                 .hasMessageContaining("MacdCross");
+    }
+
+    @Test
+    @DisplayName("Agent L2 激活只允许声明标的并在过期后拒绝")
+    void shouldEnforceDurableAgentEvaluationScopeAndExpiry() {
+        StrategyManager manager = new StrategyManager(List.of(macdStrategy), strategyProperties);
+        Instant expiry = Instant.ofEpochMilli(10_000);
+        manager.replaceAgentEvaluationScopes(List.of(new AgentEvaluationActivation(
+                "proposal-1", AgentProposalTarget.SHADOW, "MacdCross", "a".repeat(64),
+                "assignment-1", Set.of("binance:perpetual:BTCUSDT"), expiry,
+                "b".repeat(64), false)));
+
+        assertThat(manager.hasAgentEvaluationScope("MacdCross")).isTrue();
+        assertThat(manager.allowsEvaluationEvent("MacdCross",
+                new InstrumentId(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT"),
+                Instant.ofEpochMilli(9_999))).isTrue();
+        assertThat(manager.allowsEvaluationEvent("MacdCross",
+                new InstrumentId(Exchange.BINANCE, MarketType.PERPETUAL, "ETHUSDT"),
+                Instant.ofEpochMilli(9_999))).isFalse();
+        assertThat(manager.allowsEvaluationEvent("MacdCross",
+                new InstrumentId(Exchange.BINANCE, MarketType.PERPETUAL, "BTCUSDT"),
+                expiry)).isFalse();
     }
 }

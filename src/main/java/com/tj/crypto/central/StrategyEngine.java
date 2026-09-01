@@ -114,6 +114,11 @@ public class StrategyEngine {
         for (StrategyManager.ActiveStrategyRelease active : strategyManager.getActiveStrategyReleases()) {
             Strategy strategy = active.strategy();
             if (strategy.listenedEvents().contains(event.getClass())) {
+                if (strategyManager.hasAgentEvaluationScope(strategy.name())
+                        && !strategyManager.allowsEvaluationEvent(strategy.name(), event.instrument().id(),
+                        java.time.Instant.ofEpochMilli(event.metadata().exchangeTimestamp()))) {
+                    continue;
+                }
                 String seriesSuffix = event instanceof BarEvent bar
                         ? ":" + bar.timeframe().getCode() : ":" + event.getClass().getSimpleName();
                 String partition = strategy.name() + ":" + event.instrument().id().value() + seriesSuffix;

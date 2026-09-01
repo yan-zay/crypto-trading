@@ -27,6 +27,7 @@ public final class SignalEventConverter {
         dobj.setReleaseAssignmentId(event.releaseAssignmentId());
         dobj.setStrategyArtifactSha256(event.strategyArtifactSha256());
         dobj.setGovernanceSubjectSha256(event.governanceSubjectSha256());
+        dobj.setLifecycleStage(event.releaseStage() == null ? "LEGACY" : event.releaseStage().name());
         dobj.setExchange(event.instrument().exchange().getCode());
         dobj.setMarketType(event.instrument().marketType().name());
         dobj.setSymbol(event.instrument().symbol());

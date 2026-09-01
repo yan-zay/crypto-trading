@@ -55,6 +55,7 @@ class StrategyEngineQualityGateTest {
         when(strategy.listenedEvents()).thenReturn(Set.of(BarEvent.class));
 
         StrategyManager strategyManager = mock(StrategyManager.class);
+        when(strategyManager.allowsEvaluationEvent(any(), any(), any())).thenReturn(true);
         StrategyRuntimeRelease release = new StrategyRuntimeRelease(
                 "CONFIGURATION_ONLY_TEST:quality-gate-test",
                 null,
@@ -154,6 +155,7 @@ class StrategyEngineQualityGateTest {
         StrategyRuntimeRelease before = lifecycleRelease("assignment-1", "a", "b");
         StrategyRuntimeRelease after = lifecycleRelease("assignment-2", "c", "d");
         StrategyManager manager = mock(StrategyManager.class);
+        when(manager.allowsEvaluationEvent(any(), any(), any())).thenReturn(true);
         when(manager.getActiveStrategyReleases()).thenReturn(
                 List.of(active(before)), List.of(active(after)));
         String strategyName = strategy.name();
@@ -171,6 +173,7 @@ class StrategyEngineQualityGateTest {
         SignalCollector collector = mock(SignalCollector.class);
         StrategyRuntimeRelease before = lifecycleRelease("assignment-1", "a", "b");
         StrategyManager manager = mock(StrategyManager.class);
+        when(manager.allowsEvaluationEvent(any(), any(), any())).thenReturn(true);
         when(manager.getActiveStrategyReleases()).thenReturn(List.of(active(before)), List.of());
         String strategyName = strategy.name();
         when(strategy.onEvent(any(), any())).thenReturn(signal(strategyName));
@@ -193,6 +196,7 @@ class StrategyEngineQualityGateTest {
 
     private StrategyManager manager(List<StrategyManager.ActiveStrategyRelease> releases) {
         StrategyManager manager = mock(StrategyManager.class);
+        when(manager.allowsEvaluationEvent(any(), any(), any())).thenReturn(true);
         when(manager.getActiveStrategyReleases()).thenReturn(releases);
         return manager;
     }

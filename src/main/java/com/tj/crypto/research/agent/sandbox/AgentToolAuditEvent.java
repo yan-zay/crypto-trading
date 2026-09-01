@@ -18,6 +18,8 @@ public record AgentToolAuditEvent(
         String approvalReference,
         String modelVersion,
         String promptVersion,
+        String modelOutputSha256,
+        String evalReportSha256,
         Instant occurredAt,
         Long elapsedMs,
         String reasonCode,
@@ -40,11 +42,21 @@ public record AgentToolAuditEvent(
         approvalReference = optional(approvalReference, 100);
         modelVersion = optional(modelVersion, 100);
         promptVersion = optional(promptVersion, 100);
+        modelOutputSha256 = digest(modelOutputSha256, "modelOutputSha256");
+        evalReportSha256 = digest(evalReportSha256, "evalReportSha256");
         if (occurredAt == null) throw new IllegalArgumentException("occurredAt is required");
         if (elapsedMs != null && elapsedMs < 0) throw new IllegalArgumentException("elapsedMs cannot be negative");
         reasonCode = optional(reasonCode, 100);
         resultReference = optional(resultReference, 100);
         detail = optional(detail, 1000);
+    }
+
+    private static String digest(String value, String name) {
+        String normalized = optional(value, 64);
+        if (normalized != null && !normalized.matches("[0-9a-fA-F]{64}")) {
+            throw new IllegalArgumentException(name + " must be a SHA-256 digest");
+        }
+        return normalized == null ? null : normalized.toLowerCase();
     }
 
     private static String text(String value, String name, int max) {

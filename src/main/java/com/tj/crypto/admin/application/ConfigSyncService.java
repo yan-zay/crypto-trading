@@ -120,6 +120,11 @@ public class ConfigSyncService {
             if (!strategyManager.enableStrategy(strategyName)) {
                 throw new IllegalArgumentException("Unknown strategy: " + strategyName);
             }
+            if (!strategyManager.isStrategyExecutable(strategyName)) {
+                strategyManager.disableStrategy(strategyName);
+                throw new IllegalStateException("Strategy config cannot enable " + strategyName
+                        + " without a current lifecycle release assignment");
+            }
         } else {
             if (!strategyManager.disableStrategy(strategyName)) {
                 throw new IllegalArgumentException("Unknown strategy: " + strategyName);

@@ -48,8 +48,16 @@ public class BacktestJobService {
         try {
             BacktestJobRequest request = objectMapper.readValue(job.getRequestJson(), BacktestJobRequest.class);
             mapper.progress(jobId, 3, "LOADING_DATA", System.currentTimeMillis());
-            BacktestExecutionContext.run(job.getResultId(), job.getRandomSeed(), monitor,
-                    () -> run(request));
+            com.tj.crypto.research.experiment.ResearchExecutionLineage lineage =
+                    BacktestExecutionContext.run(job.getResultId(), job.getRandomSeed(), monitor,
+                            job.getCreatedBy(), () -> {
+                                run(request);
+                                return BacktestExecutionContext.researchLineage();
+                            });
+            if (lineage == null || mapper.bindResearchLineage(jobId, lineage.registrationId(),
+                    lineage.registrationSha256(), lineage.trialId()) != 1) {
+                throw new IllegalStateException("Backtest job completed without durable research lineage");
+            }
             if (mapper.complete(jobId, System.currentTimeMillis()) != 1) {
                 throw new IllegalStateException("Backtest job completion state changed unexpectedly");
             }

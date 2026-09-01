@@ -43,6 +43,18 @@ public interface BacktestJobMapper {
                  @Param("stage") String stage, @Param("now") long now);
 
     @Update("""
+            UPDATE backtest_job SET research_registration_id=#{registrationId},
+                research_registration_sha256=#{registrationSha256},
+                research_trial_id=#{trialId}, version=version+1
+            WHERE job_id=#{jobId} AND status IN ('RUNNING','CANCEL_REQUESTED')
+              AND research_registration_id IS NULL
+            """)
+    int bindResearchLineage(@Param("jobId") String jobId,
+                            @Param("registrationId") String registrationId,
+                            @Param("registrationSha256") String registrationSha256,
+                            @Param("trialId") String trialId);
+
+    @Update("""
             UPDATE backtest_job SET status='COMPLETED', progress_pct=100, stage='COMPLETED',
                 completed_at_ms=#{now}, heartbeat_at_ms=#{now}, version=version+1
             WHERE job_id=#{jobId} AND status IN ('RUNNING','CANCEL_REQUESTED')

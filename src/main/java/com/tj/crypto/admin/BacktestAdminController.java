@@ -48,7 +48,7 @@ public class BacktestAdminController {
             @RequestParam(defaultValue = "10000") BigDecimal initialBalance,
             HttpServletRequest request) {
         BacktestResult result = service.run(strategyName, exchange, marketType, symbol,
-                timeframe, days, warmupBars, initialBalance);
+                timeframe, days, warmupBars, initialBalance, false, operator(request));
         auditService.logOperation(operator(request), "RUN_BACKTEST",
                 strategyName + ":" + exchange + ":" + marketType + ":" + symbol + ":" + timeframe);
         Map<String, Object> body = new LinkedHashMap<>();
@@ -68,7 +68,7 @@ public class BacktestAdminController {
         BacktestResult result = service.runFactorStrategy(
                 request.exchange(), request.marketType(), request.symbol(), request.timeframe(),
                 request.days(), request.warmupBars(), request.initialBalance(),
-                request.autoBackfill(), request.strategy());
+                request.autoBackfill(), request.strategy(), operator(servletRequest));
         auditService.logOperation(operator(servletRequest), "RUN_FACTOR_BACKTEST",
                 request.strategy().name() + ":" + request.exchange() + ":"
                         + request.marketType() + ":" + request.symbol() + ":" + request.timeframe());

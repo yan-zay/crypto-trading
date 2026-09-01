@@ -16,6 +16,9 @@ public class BacktestJobDO {
     private String errorCode;
     private String errorMessage;
     private Long randomSeed;
+    private String researchRegistrationId;
+    private String researchRegistrationSha256;
+    private String researchTrialId;
     private String createdBy;
     private Long createdAtMs;
     private Long startedAtMs;

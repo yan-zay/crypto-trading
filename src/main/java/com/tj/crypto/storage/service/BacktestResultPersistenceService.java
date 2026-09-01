@@ -118,6 +118,10 @@ public class BacktestResultPersistenceService implements BacktestResultListener 
         if (run == null) return null;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("runId", runId);
+        result.put("researchRegistrationId", run.getResearchRegistrationId());
+        result.put("researchRegistrationSha256", run.getResearchRegistrationSha256());
+        result.put("researchTrialId", run.getResearchTrialId());
+        result.put("researchProvenanceSha256", run.getResearchProvenanceSha256());
         result.put("robustness", readObject(run.getRobustnessJson()));
         result.put("reproducibility", readObject(run.getReproducibilityJson()));
         result.put("executionQuality", readObject(run.getExecutionQualityJson()));
@@ -130,6 +134,16 @@ public class BacktestResultPersistenceService implements BacktestResultListener 
         target.setRunId(runId);
         target.setStrategyName(result.strategyName());
         target.setStrategyConfigJson(result.strategyConfigJson());
+        com.tj.crypto.research.experiment.ResearchExecutionLineage lineage =
+                BacktestExecutionContext.researchLineage();
+        if (lineage == null) {
+            throw new IllegalStateException(
+                    "Spring-managed backtest completion requires research lineage");
+        }
+        target.setResearchRegistrationId(lineage.registrationId());
+        target.setResearchRegistrationSha256(lineage.registrationSha256());
+        target.setResearchTrialId(lineage.trialId());
+        target.setResearchProvenanceSha256(lineage.observedProvenanceSha256());
         target.setExchange(result.config().instrument().exchange().getCode());
         target.setMarketType(result.config().instrument().marketType().name());
         target.setSymbol(result.config().instrument().symbol());

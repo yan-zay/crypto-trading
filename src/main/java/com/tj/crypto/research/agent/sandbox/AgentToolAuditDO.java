@@ -18,6 +18,8 @@ public class AgentToolAuditDO {
     private String approvalReference;
     private String modelVersion;
     private String promptVersion;
+    private String modelOutputSha256;
+    private String evalReportSha256;
     private Long occurredAtMs;
     private Long elapsedMs;
     private String reasonCode;
