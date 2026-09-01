@@ -29,7 +29,7 @@
 | 4. Champion/challenger 与小资金 canary | 内容寻址指标、固定资本阶梯、逐级审批、降级/回滚/HALT 决策已实现待验收 | 生产指标 producer、durable state owner、原子 applier 和资本预算未接 | 真实 30 天窗口、多个市场状态及小资金结果未验证 |
 | 5. 独立 watchdog 与人工接管 | fail-closed 状态机、权威观察、持久 head/CAS 端口、分步双控恢复与人工接管契约已实现待验收 | 独立进程、生产 verifier、Kill Switch/OMS/告警/Agent 撤销 applier 未接 | 故障、接管、恢复、值班和长期运行演练未验证 |
 | 6. Agent L3/L4 | 不可执行 L3 建议、完整内容寻址 L4 policy、单次 capability/use 绑定及默认拒绝端口已实现待验收 | 无真实模型、controller、可信身份、持久 store、OMS 或 gateway consumer；L3/L4 均 `NOT_WIRED` | 模型红队、真实 IdP/MFA、独立审批、增量价值与长期稳定性未验证 |
-| 7. V23/V24 与每订单血缘 | 不可变控制面 schema、订单决策 envelope、OMS 可选精确绑定及 dispatch/reconciliation evidence 已实现待验收 | V23/V24 mapper/service、现有 signal/OMS 写路径、可信 verifier/store/admission 均未接 | 本机 MySQL V5→V26 upgrade 已验证；fresh/CI、并发/故障和逐单证据未验证 |
+| 7. V23/V24 与每订单血缘 | 不可变控制面 schema、订单决策 envelope、OMS 可选精确绑定及 dispatch/reconciliation evidence 已实现待验收 | V23/V24 mapper/service、现有 signal/OMS 写路径、可信 verifier/store/admission 均未接 | 本机 MySQL V5→V27 upgrade 与 V1→V27 fresh 已验证；CI、并发/故障和逐单证据未验证 |
 | 8. L5 | 枚举、服务和 schema 均不提供 L5；架构契约禁止 secret/gateway/自我扩权 | 永久不接线 | **永不建设** |
 
 准确表述是：**长期仓库安全契约与确定性模型已形成，但长期交易闭环没有完成。**
@@ -264,7 +264,7 @@ npm run test:e2e
 | 候选代码树 | 本分支“自治：建立长期有界控制面与订单血缘”提交；其后的文档与公开安全提交不改变构建输入 |
 | 工具链 | JDK `17.0.15`；Maven `3.9.9`；Node `v25.9.0`；npm `11.12.1` |
 | Java 全量回归 | workspace 临时目录下 `mvn clean test`：`1028 tests / 0 failures / 0 errors / 14 skipped`；随后 `mvn verify -DskipTests`：BUILD SUCCESS |
-| MySQL V23/V24 upgrade | 本机 MySQL 8.0.34 已从 V5 实际升级至 V26，Flyway 26 个迁移全部 success；V15/V23/V24 真实兼容问题已修复。fresh/Testcontainers/CI 仍为 **NOT_VERIFIED** |
+| MySQL V23/V24/V27 | 本机 MySQL 8.0.34 已从 V5 实际升级至 V27，并用独立临时库完成 V1→V27 fresh migration；V15/V23/V24 真实兼容问题已修复。远端 Testcontainers/CI 最终候选运行仍须核验 |
 | 前端 audit/lint/build | `npm audit --omit=dev --audit-level=high`：0 vulnerability；`npm run lint`、`npm run build`：通过 |
 | 前端 Playwright | mock-contract E2E `8/8` 通过；未运行真实 Spring/MySQL E2E，不能据此验证资金链 |
 | JAR SHA-256 | `2b3aa70af3c08bf38a17d877d39a2ac5d2586b0ee4f442a7965c1624f42ea548` |
@@ -300,7 +300,7 @@ npm run test:e2e
 
 当前长期阶段退出条件**未满足**：
 
-1. P0、短期和中期阶段仍有 `NOT_WIRED`、真实环境和持续时间缺口，长期阶段不能越级通过；
+1. P0、短期和中期仍有真实环境、外部信任根和持续时间验收缺口，长期阶段不能越级通过；
 2. 资产类别无关能力目前只覆盖资本、标的规格和不可派单规划原语，现有 backtest/paper/live/OMS/venue 尚未迁移；
 3. L3/L4 没有真实模型、外部信任根、持久 store、OMS/gateway consumer 或目标环境证据；
 4. canary/watchdog 只返回确定性决策/intent，没有资金面原子 applier；
@@ -325,4 +325,4 @@ npm run test:e2e
 - Java 保持账户真相、风险预算、OMS、账本、对账、签名与 Kill Switch 所有权；Python/未来模型服务只产生内容寻址研究制品或受限 proposal；TypeScript 负责控制台和受审工具编排。
 - 先证明 Backtest/Paper/Shadow 差分一致和 Agent 相对无 Agent 基线的增量价值，再逐级考虑 L3 人审建议与 L4 预授权 envelope；任何门槛缺失均 fail-closed。
 - 当前不对接券商，也不为 Alpaca、IBKR、FIX/FIXP 预置凭据、连接器或订单路径。资产类别无关接口只作为稳定演进边界；是否接入美股或券商必须在未来重新授权，并重新完成法律、市场规则、账户真相、交易日历和 owner contract 认证。
-- 2026-09-01 本机证据为 Java 1044/0/0/14、MySQL 8.0.34 V5→V26 upgrade 成功、`pro + RESEARCH_ONLY` 真实 Spring 启动成功、Python 3/3、前端 Playwright 8/8；这些结果不改变 L3/L4 `NOT_WIRED / NOT_VERIFIED`，也不替代 fresh CI、真实模型、owner venue 或持续时间验收。
+- 2026-09-01 最新本机证据为 Java 1053/0/0/14、MySQL 8.0.34 V5→V27 upgrade 与 V1→V27 fresh 成功、`pro + RESEARCH_ONLY` 真实 Spring 启动成功、Python 3/3、前端 Playwright 8/8；这些结果不改变 L3/L4 `NOT_WIRED / NOT_VERIFIED`，也不替代最终候选 CI、真实模型、owner venue 或持续时间验收。

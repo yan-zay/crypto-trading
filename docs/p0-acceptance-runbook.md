@@ -89,7 +89,7 @@ npm run test:e2e
 - `SignalPersistenceService` 成为唯一 Signal listener；`signal_event` 插入和 Paper 订单/账本事实共享同步事务，失败回滚，不再用“异步成功”掩盖投递失败。V26 禁止更新/删除已有 Signal。
 - 配置 validate/publish/rollback 加行锁、payload/checksum 复核和 hash-chain 审计；数据库生成列与唯一索引保证每个 scope 最多一个 ACTIVE，非法状态/摘要由 MySQL 拒绝。
 - 目标 MySQL 8.0.34 已从 Flyway V5 实际升级至 V26，`failed_migrations=0`；真实执行发现并修复了 V15 超长索引、V23 外键字符集以及 V24 正则字符集兼容问题。该证据只验证本机既有库 upgrade，不替代 fresh 库、Testcontainers 和 GitHub CI。
-- JDK 17 全量 `mvnw clean test`：1044 tests / 0 failures / 0 errors / 14 skipped；14 项均为 Docker daemon 不可用时跳过的 Testcontainers/MySQL 用例。前端 production audit 为 0 vulnerability，lint/build 通过，Playwright 8/8 通过；Python research worker 3/3 通过。
+- JDK 17 最新全量 `mvnw clean test`：1053 tests / 0 failures / 0 errors / 14 skipped；14 项均为本机 Docker daemon 不可用时跳过的 Testcontainers/MySQL 用例。前端 production audit 为 0 vulnerability，lint/build 通过，Playwright 8/8 通过；Python research worker 3/3 通过。
 - `pro + RESEARCH_ONLY` 在目标 MySQL V26 上以全部外部行情连接器和实盘写关闭的方式真实启动成功；启动探针修复了生命周期 gate 多构造器注入和“已禁用历史默认账户误阻断生产启动”问题，随后全量回归通过。
 - 依赖解析为 Spring Boot 3.5.14、Spring Framework 6.2.19、Tomcat 10.1.55、Jackson 2.21.4；本机 Docker daemon 不可用，容器构建与 Trivy 镜像结果仍必须由同一候选提交的 Security workflow 给出。
 - 当前不开展券商接入；不新增券商密钥、订单 adapter、FIX session 或券商依赖。加密 venue 写开关同样继续关闭。

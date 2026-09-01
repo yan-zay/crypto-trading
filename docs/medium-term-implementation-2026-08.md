@@ -23,15 +23,15 @@
 | 路线图中期交付 | 仓库内状态 | 运行接线状态 | 外部/时间状态 |
 |---|---|---|---|
 | 1. 多类型行情与 Parquet 数据层 | 归档模型、版本化 schema、真实 Parquet 编解码、raw-first WAL 和目录持久化屏障已实现待验收 | Binance/OKX/Coinglass WebSocket 受支持载荷已接统一 journal；生产对象存储、未知帧和历史 polling 尚未纳入；不支持目录 fsync 的平台会 fail-closed | 真实连续采集、保留策略、恢复和数据完整性证据未验证 |
-| 2. 研究试验 registry | 不可变预登记、完整 trial family、失败试验和 hash-chain 事件已实现待验收 | 尚未强制接入所有回测、优化器、Agent 和认证流水线 | MySQL 容器迁移/并发与真实研究复现制品待验收 |
-| 3. 策略生命周期 | 签名制品、双审批、证据 TTL、状态机、回滚/自动降级已实现待验收 | 已连接 `StrategyManager` 运行时选择、`StrategyEngine` 信号血缘和 LIVE_CANARY 写入硬门；配置发布与真实 paper/shadow consumer 仍为 `NOT_WIRED` | 信任根、独立审批及法律/安全/运维/交易真相证据未验证，故 live 默认拒绝 |
-| 4. 组合分析 | 预算、相关性/集中度、压力、容量、OMS TCA 及内容寻址 PIT 输入约束已实现待验收 | 只读研究包；旧的无快照入口 fail-closed，可信快照 producer 和硬风控预占仍未接入 | 真实容量、基准 mark、交易成本、来源 manifest 和账实校验待验收 |
+| 2. 研究试验 registry | 不可变预登记、完整 trial family、失败试验和 hash-chain 事件已实现待验收 | Spring 管理的同步/异步后台回测已强制预登记并持久化 exact run/job lineage；离线 Golden CLI 有独立不可变登记，裸库优化器仍不是生产入口 | MySQL V27 upgrade/fresh 已验证；真实外部不可变研究制品待验收 |
+| 3. 策略生命周期 | 签名制品、双审批、证据 TTL、状态机、回滚/自动降级已实现待验收 | 配置启用、运行选择、信号血缘、SHADOW/PAPER 分流、L2 Paper/Shadow scope 和 LIVE_CANARY 写硬门已接；L2 不拥有订单工具 | 信任根、独立审批及法律/安全/运维/交易真相证据未验证，故 live 默认拒绝 |
+| 4. 组合分析 | 预算、相关性/集中度、压力、容量、OMS TCA 及内容寻址 PIT 输入约束已实现待验收 | Paper 账户、持仓、metadata 和 mark 已形成同币种 PIT exposure/equity producer 与只读 API；多币种 FX、live reservation 仍保持独立 | 真实容量、基准 mark、交易成本、来源 manifest 和账实校验待验收 |
 | 5. venue demo/testnet 合同 | 合同认证框架、离线速率限制/断线语料、缺凭据哨兵已实现待验收 | 无 owner 管理的真实 probe driver；未成为发布门 | owner testnet/demo、私有流长稳为 `NOT_VERIFIED` |
 | 6. 安全/运维/灾备治理 | 外部证据 registry、逐控制类型签名结论、KMS 断言、MFA/双人审批及全局防重放账本已实现待验收 | 默认外部验证器 fail-closed；逐笔风险增加写入已消费一次性审批，但这些代码不是 KMS、IdP、备份或告警设施本身 | KMS/MFA、PITR、RPO/RTO、告警到达、24h/7d soak/chaos 未验证 |
-| 7. Agent L1/L2 | L1 结构化假设/实验计划、L2 paper/shadow 提案、预算/TTL/审计/撤销和认证 operator 绑定审批已实现待验收 | 未接真实模型；L2 不具备订单执行能力；线程超时器不是 OS/容器安全沙盒 | 真实模型、独立沙盒和长期运行证据未验证 |
-| 8. Agent 安全与效能评测 | 内建威胁语料、确定性评分、无 Agent 基线、成本/延迟/复现指标、顺序 trace root 和不可变报告已实现待验收 | 未连接真实模型 trace、CI、生命周期晋级门或外部红队 | 真实模型红队与独立复核为 `NOT_VERIFIED` |
+| 7. Agent L1/L2 | L1 结构化假设/实验计划、L2 paper/shadow 提案、预算/TTL/审计/撤销和认证 operator 绑定审批已实现待验收 | 默认关闭的 HTTPS 白名单结构化模型 gateway 已接 L1；L2 单次 use 只激活签名 release、标的 scope 与 TTL 内 Paper/Shadow，live authority 恒 false；线程超时器不是 OS/容器沙盒 | 真实模型、外部审批、独立沙盒和长期运行证据未验证 |
+| 8. Agent 安全与效能评测 | 内建威胁语料、确定性评分、无 Agent 基线、成本/延迟/复现指标、顺序 trace root 和不可变报告已实现待验收 | 模型调用前强制读取 exact digest、PASSED、未过期且 model version 一致的报告；输入/输出/评测摘要追加审计；CI 运行契约测试 | 真实模型红队、费用账单与独立复核为 `NOT_VERIFIED` |
 
-综上，当前准确表述是：**中期仓库工程骨架已形成，但关键运行链仍有 `NOT_WIRED`，所有外部与时间证据仍须真实取得，中期阶段退出条件尚未满足。**
+综上，当前准确表述是：**中期仓库内可实现的运行接线已形成并通过本地目标库验证；外部设施、owner 环境、真实模型和持续时间证据仍须真实取得，中期阶段退出条件尚未满足。**
 
 ## 3. 交付 1：多类型行情与不可变 Parquet 数据层
 
@@ -86,7 +86,8 @@ registry 要求试验开始前一次性登记完整、连续的 trial family，�
 
 ### 4.3 边界与剩余证据
 
-- Spring service 与数据库 mapper 已存在，但尚未成为所有 backtest、参数优化、黄金策略认证和 Agent 实验的强制入口，故端到端登记为 `NOT_WIRED`；
+- `RegisteredBacktestExperimentService` 已成为所有 Spring 管理后台同步/异步回测的强制入口，执行前登记七类制品和 trial，运行时绑定 observed provenance，成功/失败追加终态；V27 把 exact registration/trial 写入 `backtest_run` 与 `backtest_job`；
+- 离线 Golden CLI 继续使用自身内容寻址 registration，`ParameterOptimizer`/`WalkForwardOptimizer` 仅作为无 Spring/无生产 API 的库原语存在；若未来暴露为服务，必须先接同一 registry gate；
 - 尚需证明并发预登记、重复幂等、失败保留和 hash-chain 在真实 MySQL fresh/upgrade 路径中成立；
 - 真实数据/代码/容器制品必须由外部不可变存储保留，URI 与 SHA-256 不能只指向会被覆盖的工作目录；
 - registry 只证明血缘完整性，不证明 Alpha、模型价值或晋级资格。
@@ -116,7 +117,8 @@ registry 要求试验开始前一次性登记完整、连续的 trial family，�
 ### 5.3 边界与剩余证据
 
 - fresh database 的信任根表默认为空，外部 readiness provider 默认拒绝，这是预期安全行为；
-- 生命周期已连接策略运行时选择、信号血缘、Admin 认证 operator 和实盘写门，但配置发布与真实 paper/shadow consumer 尚未接通；
+- 生命周期已连接配置启用、策略运行选择、信号血缘、Admin 认证 operator、SHADOW/PAPER consumer 和实盘写门；没有 current release 的配置会立即回退禁用；
+- `signal_event.lifecycle_stage/delivery_target` 与数据库触发器保证 SHADOW 不进入 Paper；CANARY/PROMOTED 在 RESEARCH_ONLY 中只能进入 Paper，不能绕到 live gateway；
 - LIVE_CANARY 代码路径存在不表示可开启：真实 readiness/KMS/MFA/法律/venue truth 证据尚未验证，默认 verifier、模式和写开关共同保持 fail-closed；
 - 单元测试中的签名密钥和通过证据仅验证状态机，不能替代真实 KMS/HSM、审批身份或目标环境证据；
 - Canary/Promote 在法律、安全、运维或 live-truth 证据缺失/过期时必须继续被拒绝。
@@ -144,7 +146,8 @@ registry 要求试验开始前一次性登记完整、连续的 trial family，�
 ### 6.3 边界与剩余证据
 
 - 此包按设计无 Spring component、mapper、交易 gateway 或风险引擎写依赖；它是确定性只读研究组件；
-- 尚未接入可信的运行时 point-in-time 快照 producer、instrument metadata、市场 mark/FX、上游 manifest、报表 API、告警或风险 reservation，因此为 `NOT_WIRED`；
+- `PaperPortfolioSnapshotService` 已把持久 Paper account/position、time-versioned metadata 和未过期 mark 组合为同币种、内容寻址、COMPLETE 的 exposure/equity 快照，并由 `/api/admin/paper-trading/portfolio-snapshot` 只读输出；
+- 当前 producer 对多币种 FX、缺 mark、stale mark、非线性合约或非正 equity fail-closed；输出固定 `executionAuthorized=false`，不会替代 live risk reservation；
 - 分析结果不得授予交易权限，也不得替代 V14 持久化预占、硬风控、Kill Switch 或对账；
 - 需用真实 OMS 成交、真实费用换算、盘口深度/成交量和市场状态校准容量/TCA，并保存 backtest/paper/shadow 差异证据。
 
@@ -223,7 +226,8 @@ L1 只能形成结构化、可证伪的假设和实验计划。L2 只生成绑�
 
 ### 9.3 边界与剩余证据
 
-- 当前没有真实 LLM/model adapter，也没有让 L2 提案进入 `PaperOrderService` 或 shadow 执行器的受控 consumer，端到端 Agent 为 `NOT_WIRED`；
+- `HttpStructuredAgentModelGateway` 已接入 L1 sandbox：只允许 HTTPS host allowlist、禁止 redirect、无工具列表、限制响应大小/超时，并要求 token、model/prompt 版本和 exact Agent eval report；默认关闭；
+- L2 提案通过 `AgentProposalEvaluationService` 单次消费，必须绑定当前签名 artifact/release、目标 stage、instrument scope 与 TTL；StrategyEngine 在策略执行前检查 scope，撤销/过期投影会禁用策略；使用表和审计均追加式，`liveExecutionAuthorized=false`；
 - `TimedSandboxTaskRunner` 提供有界线程超时/取消，不是操作系统、容器、虚拟机或独立网络命名空间安全边界；
 - 在具备真实隔离前，不得运行不受信任代码、开放进程创建、任意文件访问或外部网络；
 - Agent 不得获取密钥、签名、实盘订单、配置发布、风险预算修改或 Kill Switch 写权限；当前 L0 只读限制和 RESEARCH_ONLY 不得放宽。
@@ -249,7 +253,8 @@ L1 只能形成结构化、可证伪的假设和实验计划。L2 只生成绑�
 ### 10.3 边界与剩余证据
 
 - 单元测试使用构造的 trace 验证 evaluator，不是对任何真实模型的红队结果；
-- evaluator 和本地报告存储尚未接真实模型调用链、不可变外部 evidence store、CI 或策略/Agent 晋级门，故为 `NOT_WIRED`；
+- evaluator 的不可变报告已成为外部模型调用硬门，model output SHA 与 eval report SHA 写入追加式工具审计；缺失、失败、摘要不符、model version 不符或过期均拒绝调用；
+- 本门验证的是仓库接线，不代表已运行真实模型红队；外部 evidence store、真实账单和独立复核仍为 `NOT_VERIFIED`；
 - 仍需对锁定的 model、prompt、上下文、工具版本和审批 policy 运行真实、重复、独立复核的评测，并保留原始 trace 与费用/延迟账单；
 - 模型或 prompt 任一变化都必须产生新的评测主体和报告，旧报告不能沿用。
 
@@ -291,8 +296,8 @@ npm run test:e2e
 
 当前未满足路线图第 7 节阶段退出条件，原因包括：
 
-1. 签名制品与 policy gate 已接策略运行选择、信号血缘和 live 写硬门，但配置发布、真实 paper/shadow consumer 及全部外部信任根尚未接通/验收；
-2. Agent 模型、prompt、上下文与工具调用尚无真实模型端到端 trace，评测也未成为发布门；
+1. 签名制品与 policy gate 的仓库运行链已接通，但真实 KMS/IdP、独立审批和外部 readiness 信任根尚未验收；
+2. 结构化模型 adapter、摘要审计和 eval gate 已接通，但没有 owner 提供的真实模型报告、原始 trace、费用账单与外部红队证据；
 3. owner testnet/demo 与私有流持续运行尚未验证；
 4. KMS/MFA/双人审批、PITR、RPO/RTO、外部告警和 7 天 chaos/soak 证据缺失；
 5. 30～90 天 forward paper/shadow、专项法律意见和不可变真实数据上的 Alpha 证据未完成。
@@ -318,4 +323,8 @@ npm run test:e2e
 
 多语言决策是“Java 主内核 + Python 研究面 + TypeScript 控制台/受限编排”，通过版本化 schema、manifest 和 SHA-256 边界协作，不采用共享可变内存或让动态语言进入最终写路径。当前明确不对接券商；券商 adapter、凭据、FIX/FIXP 与美股交易日历均不属于短中期 backlog，未来需项目所有者重新明确授权。
 
-本批验证快照：Java 17 全量回归 1044 tests / 0 failures / 0 errors / 14 skipped；目标 MySQL 8.0.34 V5→V26 upgrade 成功且无失败迁移；`pro + RESEARCH_ONLY` 禁用外部连接器/实盘写的真实 Spring 启动成功；Python worker 3/3；前端 production audit 0 vulnerability、lint/build、Playwright 8/8。14 个 skip 仍是 Docker/Testcontainers 用例；本轮未提交/推送，因此 fresh CI、Security workflow 和容器镜像扫描仍为 `NOT_VERIFIED`。
+本批验证快照：Java 17 全量回归 1053 tests / 0 failures / 0 errors / 14 skipped；目标 MySQL 8.0.34 V26→V27 upgrade 成功且无失败迁移；独立临时库 V1→V27 fresh migration 成功并在核验后删除；`pro + RESEARCH_ONLY` 禁用外部连接器、Agent 模型和实盘写的真实 Spring 启动成功；Python worker 3/3；前端 production audit 0 vulnerability、lint/build、Playwright 8/8。首轮远端 CI 暴露的 Testcontainers digest 兼容元数据、Ant 弹层时序和镜像依赖漏洞已在候选代码中修复；最终状态必须以后续同一候选提交 workflow 为准。
+
+## 14. 2026-09-01 中期仓库接线收口
+
+V27 是中期运行接线的数据库边界：强制 backtest registry lineage、生命周期 Signal 路由、Agent 模型输出/评测摘要以及 L2 proposal single-use scope。中期代码完成不改变下列事实：owner venue、KMS/MFA/双人审批、真实模型红队、PITR/RPO/RTO、7 天私有流/chaos/soak 和 30～90 天 forward 只能由真实外部运行取得。它们完成前，中期阶段状态只能是 **“仓库接线完成，外部与时间验收进行中”**。

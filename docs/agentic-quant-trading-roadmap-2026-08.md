@@ -273,11 +273,11 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 - Agent L1 结构化假设/实验计划，Agent L2 仅 PAPER/SHADOW 的短 TTL 提案、预算、审计和撤销；审批摘要、proposal/use ID 与 verifier receipt 绑定认证 operator；
 - prompt injection、越权、投毒、工具误用、secret、复现率、成本、延迟和无 Agent 基线的确定性评测与内容寻址报告；有序 trace 覆盖完整模型/上下文/工具/审批/policy/结果链并由 evaluator 重算 root。
 
-`NOT_WIRED`：WebSocket raw-first journal 已接入 Binance/OKX/Coinglass 的受支持实时载荷，但生产对象存储、连续采集/恢复证据及 Coinglass 历史 polling 路径不在该保证内；试验 registry 尚未成为全部研究入口；策略 release 尚未接配置发布和真实 shadow consumer，Paper 信号投递已同事务接线但实盘硬门仍因外部信任根默认拒绝且写开关关闭；组合分析尚未接 point-in-time 运行快照和硬风控；venue 框架没有 owner 管理的真实 probe；Agent L1/L2 尚未接真实模型，L2 仍只是不可执行提案；Agent 评测尚未接真实模型 trace、CI 和晋级门。独立组件存在不能冒充端到端能力。
+`仓库运行接线已完成待外部验收`：WebSocket raw-first journal 已接入 Binance/OKX/Coinglass 受支持载荷；所有 Spring 管理的同步/异步后台回测在执行前强制登记完整试验族并把 exact registry lineage 写入 run/job；配置启用必须有当前签名 release，Signal 按 SHADOW/PAPER 生命周期持久分流；Paper 组合已有内容寻址 PIT exposure/equity producer 与只读 API；Agent L1 有默认关闭的 HTTPS 结构化模型 gateway，调用前必须通过 exact model 的内容寻址评测报告；L2 提案只能单次激活签名 release、声明标的和 TTL 内的 Paper/Shadow 范围，实盘授权固定为 false；模型输出/评测摘要进入追加审计。生产对象存储、Coinglass 历史 polling raw-first、离线 CLI/裸优化器的数据库 registry 统一、owner probe、真实模型/评测、外部信任根和持续时间证据仍不在已验收范围内。
 
 `外部阻塞/时间验收`：owner testnet/demo、真实 KMS/Vault/HSM 与 MFA/双人审批、PITR、RPO/RTO、外部告警到达、24h/7d soak/chaos、私有流长稳、真实模型红队、30～90 天 forward paper/shadow、专项法律意见和不可变真实数据上的 Alpha 证据均未完成。
 
-因此，中期阶段退出条件仍未满足；系统继续保持 **RESEARCH_ONLY / NO-GO**，交易所和全局实盘写开关保持关闭。逐项代码位置、验证命令和证据要求以 `docs/medium-term-implementation-2026-08.md` 为准。
+因此，中期**仓库内可实现的运行接线已完成**，但阶段退出条件仍未满足；系统继续保持 **RESEARCH_ONLY / NO-GO**，交易所和全局实盘写开关保持关闭。逐项代码位置、验证命令和证据要求以 `docs/medium-term-implementation-2026-08.md` 为准。
 
 ## 8. 长期目标（12～24+ 个月）
 
