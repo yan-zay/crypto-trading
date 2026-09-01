@@ -11,6 +11,7 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.config.properties.ConnectorProperties;
 import com.tj.crypto.config.properties.MarketUniverseProperties;
 import com.tj.crypto.event.MarketEventBus;
+import com.tj.crypto.marketdata.archive.RealtimeMarketIngestCoordinator;
 import com.tj.crypto.marketdata.connector.ConnectorHealth;
 import com.tj.crypto.marketdata.connector.MarketDataConnector;
 import com.tj.crypto.marketdata.connector.SubscriptionRequest;
@@ -19,6 +20,7 @@ import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.normalize.BinanceKlineNormalizer;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -46,6 +48,7 @@ public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
     private final ConnectorProperties properties;
     private final MarketUniverseProperties marketUniverse;
     private final ObjectMapper objectMapper;
+    private final RealtimeMarketIngestCoordinator ingestCoordinator;
     private final Map<MarketType, Set<SubscriptionRequest>> subscriptions =
             new EnumMap<>(MarketType.class);
     private final Map<MarketType, BinanceMarketWebSocketSession> sessions =
@@ -56,17 +59,20 @@ public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
     private final AtomicLong lastParsedTimestamp = new AtomicLong();
     private volatile String parseError;
 
+    @Autowired
     public OkHttpBinanceWebSocketClient(OkHttpClient httpClient,
                                          BinanceKlineNormalizer normalizer,
                                          MarketEventBus eventBus,
                                          ConnectorProperties properties,
                                          MarketUniverseProperties marketUniverse,
-                                         ObjectMapper objectMapper) {
+                                         ObjectMapper objectMapper,
+                                         RealtimeMarketIngestCoordinator ingestCoordinator) {
         this.normalizer = normalizer;
         this.eventBus = eventBus;
         this.properties = properties;
         this.marketUniverse = marketUniverse;
         this.objectMapper = objectMapper;
+        this.ingestCoordinator = ingestCoordinator;
         subscriptions.put(MarketType.SPOT, new CopyOnWriteArraySet<>());
         subscriptions.put(MarketType.PERPETUAL, new CopyOnWriteArraySet<>());
         registerConfiguredSubscriptions();
@@ -74,6 +80,15 @@ public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
                 httpClient, MarketType.SPOT, properties.getBinanceSpotWsUrl()));
         sessions.put(MarketType.PERPETUAL, createSession(
                 httpClient, MarketType.PERPETUAL, properties.getBinancePerpetualWsUrl()));
+    }
+
+    public OkHttpBinanceWebSocketClient(OkHttpClient httpClient,
+                                        BinanceKlineNormalizer normalizer,
+                                        MarketEventBus eventBus,
+                                        ConnectorProperties properties,
+                                        MarketUniverseProperties marketUniverse,
+                                        ObjectMapper objectMapper) {
+        this(httpClient, normalizer, eventBus, properties, marketUniverse, objectMapper, null);
     }
 
     /** Test-friendly constructor. */
@@ -174,8 +189,14 @@ public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
 
     void handleMessage(MarketType marketType, String text) {
         parsedMessages.incrementAndGet();
-        lastParsedTimestamp.set(System.currentTimeMillis());
+        long receivedAt = System.currentTimeMillis();
+        lastParsedTimestamp.set(receivedAt);
+        RealtimeMarketIngestCoordinator.RawCapture raw = null;
         try {
+            if (ingestCoordinator != null) {
+                raw = ingestCoordinator.retainRaw(Exchange.BINANCE, marketType, "ALL",
+                        "kline-websocket", "application/json", text, receivedAt, receivedAt);
+            }
             JsonNode root = objectMapper.readTree(text);
             JsonNode payload = root.has("data") && root.path("data").isObject()
                     ? root.path("data") : root;
@@ -183,16 +204,30 @@ public class OkHttpBinanceWebSocketClient implements MarketDataConnector {
             long eventTime = payload.path("E").asLong(System.currentTimeMillis());
             BarEvent bar = normalizer.normalize(payload.path("k"), eventTime, marketType);
             if (bar == null) return;
-            eventBus.publish(bar);
+            RealtimeMarketIngestCoordinator.CanonicalPublish<BarEvent> result =
+                    ingestCoordinator == null
+                            ? new RealtimeMarketIngestCoordinator.CanonicalPublish<>(
+                            bar, eventBus.publish(bar))
+                            : ingestCoordinator.retainCanonicalAndPublish(raw, 0, bar);
+            BarEvent published = result.event();
+            if (!result.admitted()) return;
             for (Consumer<MarketEvent> handler : handlers) {
                 try {
-                    handler.accept(bar);
+                    handler.accept(published);
                 } catch (RuntimeException e) {
                     log.warn("Binance event handler failed: {}", e.getMessage());
                 }
             }
             parseError = null;
         } catch (Exception e) {
+            if (raw != null && ingestCoordinator != null) {
+                try {
+                    ingestCoordinator.recordNormalizationFailure(raw,
+                            "BINANCE_KLINE_NORMALIZATION_FAILED", e);
+                } catch (RuntimeException journalFailure) {
+                    log.error("Cannot retain Binance normalization failure", journalFailure);
+                }
+            }
             parseError = e.getMessage();
             log.warn("Cannot process Binance {} message: {}", marketType, e.getMessage());
         }

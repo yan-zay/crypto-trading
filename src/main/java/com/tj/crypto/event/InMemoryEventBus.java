@@ -1,7 +1,10 @@
 package com.tj.crypto.event;
 
 import com.tj.crypto.marketdata.model.MarketEvent;
+import com.tj.crypto.marketdata.model.BarEvent;
+import com.tj.crypto.marketdata.quality.MarketDataQualityGate;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,12 +28,30 @@ import java.util.function.Consumer;
 @Component
 public class InMemoryEventBus implements MarketEventBus {
 
+    private final MarketDataQualityGate marketDataQualityGate;
+
     private final ConcurrentHashMap<Class<? extends MarketEvent>, List<Consumer<? extends MarketEvent>>>
             subscribers = new ConcurrentHashMap<>();
 
+    /** Spring runtime constructor: admission happens before any subscriber can observe a bar. */
+    @Autowired
+    public InMemoryEventBus(MarketDataQualityGate marketDataQualityGate) {
+        this.marketDataQualityGate = marketDataQualityGate;
+    }
+
+    /** Isolated tests and embedders may assemble an unguarded bus explicitly. */
+    public InMemoryEventBus() {
+        this.marketDataQualityGate = null;
+    }
+
     @Override
     @SuppressWarnings("unchecked")
-    public <T extends MarketEvent> void publish(T event) {
+    public <T extends MarketEvent> boolean publish(T event) {
+        if (event == null) throw new IllegalArgumentException("market event is required");
+        if (event instanceof BarEvent bar && marketDataQualityGate != null
+                && !marketDataQualityGate.evaluate(bar).dispatchToStrategies()) {
+            return false;
+        }
         // 向事件类型本身及其所有父类型/接口的订阅者派发
         Class<?> type = event.getClass();
         while (type != null && MarketEvent.class.isAssignableFrom(type)) {
@@ -43,6 +64,7 @@ public class InMemoryEventBus implements MarketEventBus {
             }
             type = type.getSuperclass();
         }
+        return true;
     }
 
     @SuppressWarnings("unchecked")

@@ -3,9 +3,11 @@ package com.tj.crypto.marketdata.archive;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tj.crypto.marketdata.model.EventMetadata;
+import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.FundingRateEvent;
 import com.tj.crypto.marketdata.model.IndexPriceEvent;
 import com.tj.crypto.marketdata.model.L2OrderBookEvent;
+import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarkPriceEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.model.OpenInterestEvent;
@@ -38,8 +40,8 @@ import java.util.regex.Pattern;
  *
  * <p>每条事实写入独立的 CREATE_NEW 文件并在返回 receipt 前执行 {@link FileChannel#force(boolean)}。
  * 崩溃留下的半条记录不会被覆盖或忽略：后续读取会 fail-closed，要求人工保留证据并修复。
- * 该实现没有接入任何交易所 connector，因此 capability 永远是 {@code NOT_WIRED}；冷层存在不能冒充
- * Binance/OKX/Coinglass 的实时 raw capture 已完成。</p>
+ * 普通构造器保持 {@code NOT_WIRED}；只有 Spring 生产装配在所有受支持 WebSocket 连接器均经统一
+ * coordinator 写入时才使用 {@link #wired(Path)}。本地冷层存在本身不能冒充真实连续采集已验收。</p>
  */
 public final class LocalFsyncMarketIngestJournal implements LiveMarketIngestJournal {
     private static final String JOURNAL_VERSION = "1";
@@ -54,18 +56,33 @@ public final class LocalFsyncMarketIngestJournal implements LiveMarketIngestJour
     private final Path lockRoot;
     private final Clock clock;
     private final DirectoryDurabilityBarrier directoryDurabilityBarrier;
+    private final RealtimeCaptureCapability realtimeCaptureCapability;
     private final ObjectMapper json = ArchiveJson.mapper();
 
     public LocalFsyncMarketIngestJournal(Path root) {
-        this(root, Clock.systemUTC(), DirectoryDurabilityBarrier.strictPlatform());
+        this(root, Clock.systemUTC(), DirectoryDurabilityBarrier.strictPlatform(),
+                RealtimeCaptureCapability.NOT_WIRED);
+    }
+
+    /** Spring production assembly uses this only when all supported live connectors use the coordinator. */
+    public static LocalFsyncMarketIngestJournal wired(Path root) {
+        return new LocalFsyncMarketIngestJournal(root, Clock.systemUTC(),
+                DirectoryDurabilityBarrier.strictPlatform(), RealtimeCaptureCapability.WIRED);
     }
 
     LocalFsyncMarketIngestJournal(Path root, Clock clock) {
-        this(root, clock, DirectoryDurabilityBarrier.strictPlatform());
+        this(root, clock, DirectoryDurabilityBarrier.strictPlatform(),
+                RealtimeCaptureCapability.NOT_WIRED);
     }
 
     LocalFsyncMarketIngestJournal(Path root, Clock clock,
                                   DirectoryDurabilityBarrier directoryDurabilityBarrier) {
+        this(root, clock, directoryDurabilityBarrier, RealtimeCaptureCapability.NOT_WIRED);
+    }
+
+    LocalFsyncMarketIngestJournal(Path root, Clock clock,
+                                  DirectoryDurabilityBarrier directoryDurabilityBarrier,
+                                  RealtimeCaptureCapability realtimeCaptureCapability) {
         if (root == null || clock == null || directoryDurabilityBarrier == null) {
             throw new IllegalArgumentException("root, clock and directory durability barrier are required");
         }
@@ -76,6 +93,8 @@ public final class LocalFsyncMarketIngestJournal implements LiveMarketIngestJour
         this.lockRoot = this.root.resolve("_locks");
         this.clock = clock;
         this.directoryDurabilityBarrier = directoryDurabilityBarrier;
+        this.realtimeCaptureCapability = java.util.Objects.requireNonNull(
+                realtimeCaptureCapability, "realtimeCaptureCapability");
         createOwnedDirectory(this.root);
         createOwnedDirectory(rawRoot);
         createOwnedDirectory(canonicalRoot);
@@ -199,7 +218,7 @@ public final class LocalFsyncMarketIngestJournal implements LiveMarketIngestJour
 
     @Override
     public RealtimeCaptureCapability realtimeCaptureCapability() {
-        return RealtimeCaptureCapability.NOT_WIRED;
+        return realtimeCaptureCapability;
     }
 
     public static String stableRawMessageId(RawMarketMessage raw) {
@@ -288,6 +307,15 @@ public final class LocalFsyncMarketIngestJournal implements LiveMarketIngestJour
         if (event instanceof TradeEvent value) {
             return new TradeEvent(value.instrument(), metadata, value.tradeId(), value.price(), value.quantity(),
                     value.quoteQuantity(), value.aggressorSide());
+        }
+        if (event instanceof BarEvent value) {
+            return new BarEvent(value.instrument(), metadata, value.timeframe(), value.open(),
+                    value.high(), value.low(), value.close(), value.volume(), value.quoteVolume(),
+                    value.closed());
+        }
+        if (event instanceof LiquidationEvent value) {
+            return new LiquidationEvent(value.instrument(), metadata, value.side(), value.price(),
+                    value.quantity(), value.quantityUsd(), value.exchangeName());
         }
         if (event instanceof L2OrderBookEvent value) {
             return new L2OrderBookEvent(value.instrument(), metadata, value.bookEpoch(), value.firstUpdateId(),

@@ -1,9 +1,11 @@
 package com.tj.crypto.marketdata.archive;
 
 import com.tj.crypto.marketdata.model.ArchivableMarketData;
+import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.FundingRateEvent;
 import com.tj.crypto.marketdata.model.IndexPriceEvent;
 import com.tj.crypto.marketdata.model.L2OrderBookEvent;
+import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarkPriceEvent;
 import com.tj.crypto.marketdata.model.OpenInterestEvent;
 import com.tj.crypto.marketdata.model.RawMarketMessage;
@@ -11,6 +13,8 @@ import com.tj.crypto.marketdata.model.TradeEvent;
 
 /** 稳定的归档事件类型；枚举名进入 Parquet 和 manifest，不得静默重命名。 */
 public enum ArchiveEventType {
+    BAR(BarEvent.class, "bar"),
+    LIQUIDATION(LiquidationEvent.class, "liquidation"),
     TRADE(TradeEvent.class, "trade"),
     L2_ORDER_BOOK(L2OrderBookEvent.class, "l2"),
     MARK_PRICE(MarkPriceEvent.class, "mark_price"),

@@ -1,0 +1,19 @@
+{
+  "type": "record", "name": "BarArchiveV1", "namespace": "com.tj.crypto.marketdata.archive.avro",
+  "fields": [
+    {"name":"row_number","type":"long"}, {"name":"event_key","type":"string"},
+    {"name":"source","type":"string"}, {"name":"exchange","type":"string"},
+    {"name":"market_type","type":"string"}, {"name":"symbol","type":"string"},
+    {"name":"base_asset","type":"string"}, {"name":"quote_asset","type":"string"},
+    {"name":"exchange_timestamp","type":"long"}, {"name":"received_timestamp","type":"long"},
+    {"name":"raw_message_id","type":["null","string"],"default":null},
+    {"name":"timeframe","type":"string"},
+    {"name":"open","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"high","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"low","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"close","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"volume","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"quote_volume","type":{"type":"bytes","logicalType":"decimal","precision":38,"scale":18}},
+    {"name":"closed","type":"boolean"}
+  ]
+}

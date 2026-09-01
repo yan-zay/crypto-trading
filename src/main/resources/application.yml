@@ -46,6 +46,8 @@ id:
 
 # Coinglass API 配置
 crypto:
+  marketdata:
+    realtime-journal-root: ${MARKETDATA_REALTIME_JOURNAL_ROOT:target/market-journal}
   auth:
     secret-key: ${AUTH_SECRET:default-secret-change-in-production}
     token-ttl-ms: ${ADMIN_TOKEN_TTL_MS:900000}

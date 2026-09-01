@@ -3,12 +3,16 @@ package com.tj.crypto.marketdata.archive;
 import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
+import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.common.domain.TradeSide;
 import com.tj.crypto.marketdata.model.ArchivableMarketData;
+import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.FundingRateEvent;
 import com.tj.crypto.marketdata.model.IndexPriceEvent;
 import com.tj.crypto.marketdata.model.L2OrderBookEvent;
+import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarkPriceEvent;
 import com.tj.crypto.marketdata.model.OpenInterestEvent;
 import com.tj.crypto.marketdata.model.OrderBookLevel;
@@ -37,6 +41,12 @@ class LocalParquetMarketDataArchiveTest {
         LocalParquetMarketDataArchive archive = new LocalParquetMarketDataArchive(
                 temporaryDirectory, Clock.systemUTC(), barrier);
         List<ArchivableMarketData> facts = List.of(
+                new BarEvent(instrument(), metadata(), Timeframe.M1, new BigDecimal("100"),
+                        new BigDecimal("110"), new BigDecimal("90"), new BigDecimal("105"),
+                        new BigDecimal("2"), new BigDecimal("210"), true),
+                new LiquidationEvent(instrument(), metadata(), OrderSide.LONG,
+                        new BigDecimal("100"), new BigDecimal("2"),
+                        new BigDecimal("200"), "Binance"),
                 trade("trade-1", "100"),
                 new L2OrderBookEvent(instrument(), metadata(), "book-1", 1, 2, 0L, 77L, true,
                         List.of(new OrderBookLevel(new BigDecimal("99"), new BigDecimal("1"))),

@@ -5,6 +5,9 @@ import com.tj.crypto.event.InMemoryEventBus;
 import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.normalize.BinanceKlineNormalizer;
+import com.tj.crypto.marketdata.quality.DataQualityChecker;
+import com.tj.crypto.marketdata.quality.MarketDataQualityGate;
+import com.tj.crypto.risk.KillSwitch;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -225,6 +229,29 @@ class OkHttpBinanceWebSocketClientTest {
 
             assertThat(handlerEvent.get()).isNotNull();
             assertThat(handlerEvent.get().instrument().symbol()).isEqualTo("BTCUSDT");
+        }
+
+        @Test
+        @DisplayName("统一准入拒绝重复 Bar 时不得旁路通知连接器回调")
+        void shouldNotNotifyConnectorHandlerAfterAdmissionRejectsDuplicate() {
+            InMemoryEventBus guardedBus = new InMemoryEventBus(new MarketDataQualityGate(
+                    new DataQualityChecker(), new KillSwitch()));
+            OkHttpBinanceWebSocketClient guardedClient = new OkHttpBinanceWebSocketClient(
+                    new OkHttpClient(), new BinanceKlineNormalizer(), guardedBus,
+                    List.of("BTCUSDT"));
+            AtomicInteger callbacks = new AtomicInteger();
+            guardedClient.onEvent(ignored -> callbacks.incrementAndGet());
+            String message = """
+                    {"e":"kline","E":1672515782136,"s":"BTCUSDT","k":{
+                      "t":1672515780000,"T":1672515839999,"s":"BTCUSDT","i":"1m",
+                      "o":"16721.50","h":"16722.00","l":"16721.00","c":"16721.50",
+                      "v":"100.5","q":"1679231.25","x":true}}
+                    """;
+
+            guardedClient.handleMessage(message);
+            guardedClient.handleMessage(message);
+
+            assertThat(callbacks).hasValue(1);
         }
     }
 

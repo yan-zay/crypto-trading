@@ -10,6 +10,7 @@ import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.config.properties.OkxProperties;
 import com.tj.crypto.config.properties.MarketUniverseProperties;
 import com.tj.crypto.event.MarketEventBus;
+import com.tj.crypto.marketdata.archive.RealtimeMarketIngestCoordinator;
 import com.tj.crypto.marketdata.connector.ConnectorHealth;
 import com.tj.crypto.marketdata.connector.MarketDataConnector;
 import com.tj.crypto.marketdata.connector.SubscriptionRequest;
@@ -26,6 +27,7 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -57,6 +59,7 @@ public class OkHttpOkxWebSocketClient implements MarketDataConnector {
     private final MarketEventBus eventBus;
     private final ObjectMapper objectMapper;
     private final MarketUniverseProperties marketUniverse;
+    private final RealtimeMarketIngestCoordinator ingestCoordinator;
     private final Set<SubscriptionRequest> subscriptions = new CopyOnWriteArraySet<>();
     private final List<Consumer<MarketEvent>> handlers = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -78,17 +81,27 @@ public class OkHttpOkxWebSocketClient implements MarketDataConnector {
     private volatile ScheduledFuture<?> pingTask;
     private volatile ScheduledFuture<?> reconnectTask;
 
+    @Autowired
     public OkHttpOkxWebSocketClient(OkHttpClient httpClient, OkxProperties properties,
                                     OkxKlineNormalizer normalizer, MarketEventBus eventBus,
                                     ObjectMapper objectMapper,
-                                    MarketUniverseProperties marketUniverse) {
+                                    MarketUniverseProperties marketUniverse,
+                                    RealtimeMarketIngestCoordinator ingestCoordinator) {
         this.httpClient = httpClient;
         this.properties = properties;
         this.normalizer = normalizer;
         this.eventBus = eventBus;
         this.objectMapper = objectMapper;
         this.marketUniverse = marketUniverse;
+        this.ingestCoordinator = ingestCoordinator;
         registerConfiguredSubscriptions();
+    }
+
+    public OkHttpOkxWebSocketClient(OkHttpClient httpClient, OkxProperties properties,
+                                    OkxKlineNormalizer normalizer, MarketEventBus eventBus,
+                                    ObjectMapper objectMapper,
+                                    MarketUniverseProperties marketUniverse) {
+        this(httpClient, properties, normalizer, eventBus, objectMapper, marketUniverse, null);
     }
 
     @Override
@@ -187,16 +200,36 @@ public class OkHttpOkxWebSocketClient implements MarketDataConnector {
             if (!channel.startsWith("candle") || instrumentId.isBlank() || !data.isArray()) return;
 
             long receivedAt = System.currentTimeMillis();
+            RealtimeMarketIngestCoordinator.RawCapture raw = ingestCoordinator == null ? null
+                    : ingestCoordinator.retainRaw(Exchange.OKX,
+                    OkxMarketDataMappings.marketType(instrumentId),
+                    OkxMarketDataMappings.toInternalSymbol(instrumentId), channel,
+                    "application/json", text, receivedAt, receivedAt);
+            int ordinal = 0;
             for (JsonNode candle : data) {
-                BarEvent bar = normalizer.normalize(instrumentId, channel, candle, receivedAt);
-                if (bar == null) continue;
-                eventBus.publish(bar);
-                for (Consumer<MarketEvent> handler : handlers) {
-                    try {
-                        handler.accept(bar);
-                    } catch (RuntimeException e) {
-                        log.warn("OKX event handler failed: {}", e.getMessage());
+                try {
+                    BarEvent bar = normalizer.normalize(instrumentId, channel, candle, receivedAt);
+                    if (bar == null) continue;
+                    RealtimeMarketIngestCoordinator.CanonicalPublish<BarEvent> result =
+                            ingestCoordinator == null
+                                    ? new RealtimeMarketIngestCoordinator.CanonicalPublish<>(
+                                    bar, eventBus.publish(bar))
+                                    : ingestCoordinator.retainCanonicalAndPublish(raw, ordinal++, bar);
+                    BarEvent published = result.event();
+                    if (!result.admitted()) continue;
+                    for (Consumer<MarketEvent> handler : handlers) {
+                        try {
+                            handler.accept(published);
+                        } catch (RuntimeException e) {
+                            log.warn("OKX event handler failed: {}", e.getMessage());
+                        }
                     }
+                } catch (RuntimeException normalizationFailure) {
+                    if (raw != null && ingestCoordinator != null) {
+                        ingestCoordinator.recordNormalizationFailure(raw,
+                                "OKX_KLINE_NORMALIZATION_FAILED", normalizationFailure);
+                    }
+                    throw normalizationFailure;
                 }
             }
         } catch (Exception e) {

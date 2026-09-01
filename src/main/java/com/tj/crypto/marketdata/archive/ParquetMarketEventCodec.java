@@ -3,12 +3,16 @@ package com.tj.crypto.marketdata.archive;
 import com.tj.crypto.common.domain.Exchange;
 import com.tj.crypto.common.domain.Instrument;
 import com.tj.crypto.common.domain.MarketType;
+import com.tj.crypto.common.domain.OrderSide;
+import com.tj.crypto.common.domain.Timeframe;
 import com.tj.crypto.common.domain.TradeSide;
 import com.tj.crypto.marketdata.model.ArchivableMarketData;
+import com.tj.crypto.marketdata.model.BarEvent;
 import com.tj.crypto.marketdata.model.EventMetadata;
 import com.tj.crypto.marketdata.model.FundingRateEvent;
 import com.tj.crypto.marketdata.model.IndexPriceEvent;
 import com.tj.crypto.marketdata.model.L2OrderBookEvent;
+import com.tj.crypto.marketdata.model.LiquidationEvent;
 import com.tj.crypto.marketdata.model.MarkPriceEvent;
 import com.tj.crypto.marketdata.model.MarketEvent;
 import com.tj.crypto.marketdata.model.OpenInterestEvent;
@@ -56,6 +60,8 @@ final class ParquetMarketEventCodec {
     private static final int DECIMAL_PRECISION = 38;
     private static final PlainParquetConfiguration CONFIGURATION = new PlainParquetConfiguration();
     private static final Map<ArchiveEventType, String> SCHEMA_RESOURCES = Map.of(
+            ArchiveEventType.BAR, "/schema/marketdata/bar-v1.avsc",
+            ArchiveEventType.LIQUIDATION, "/schema/marketdata/liquidation-v1.avsc",
             ArchiveEventType.TRADE, "/schema/marketdata/trade-v1.avsc",
             ArchiveEventType.L2_ORDER_BOOK, "/schema/marketdata/l2-v1.avsc",
             ArchiveEventType.MARK_PRICE, "/schema/marketdata/mark-price-v1.avsc",
@@ -183,6 +189,15 @@ final class ParquetMarketEventCodec {
         if (event instanceof TradeEvent trade) {
             return key(type, trade.instrument(), trade.tradeId());
         }
+        if (event instanceof BarEvent bar) {
+            return key(type, bar.instrument(), bar.timeframe().name() + ":"
+                    + bar.metadata().exchangeTimestamp() + ":" + bar.closed());
+        }
+        if (event instanceof LiquidationEvent liquidation) {
+            return key(type, liquidation.instrument(), liquidation.metadata().exchangeTimestamp()
+                    + ":" + liquidation.side() + ":" + decimalKey(liquidation.price())
+                    + ":" + decimalKey(liquidation.quantity()));
+        }
         if (event instanceof L2OrderBookEvent book) {
             return key(type, book.instrument(), book.bookEpoch() + ":"
                     + book.firstUpdateId() + ":" + book.lastUpdateId());
@@ -219,6 +234,8 @@ final class ParquetMarketEventCodec {
         if (event instanceof MarketEvent market) putInstrument(record, market.instrument());
 
         switch (type) {
+            case BAR -> putBar(record, (BarEvent) event);
+            case LIQUIDATION -> putLiquidation(record, (LiquidationEvent) event);
             case TRADE -> putTrade(record, (TradeEvent) event);
             case L2_ORDER_BOOK -> putBook(record, (L2OrderBookEvent) event);
             case MARK_PRICE -> {
@@ -248,6 +265,25 @@ final class ParquetMarketEventCodec {
         decimal(record, "quantity", trade.quantity());
         decimal(record, "quote_quantity", trade.quoteQuantity());
         record.put("aggressor_side", trade.aggressorSide().name());
+    }
+
+    private void putBar(GenericRecord record, BarEvent bar) {
+        record.put("timeframe", bar.timeframe().getCode());
+        decimal(record, "open", bar.open());
+        decimal(record, "high", bar.high());
+        decimal(record, "low", bar.low());
+        decimal(record, "close", bar.close());
+        decimal(record, "volume", bar.volume());
+        decimal(record, "quote_volume", bar.quoteVolume());
+        record.put("closed", bar.closed());
+    }
+
+    private void putLiquidation(GenericRecord record, LiquidationEvent liquidation) {
+        record.put("side", liquidation.side().name());
+        decimal(record, "price", liquidation.price());
+        decimal(record, "quantity", liquidation.quantity());
+        decimal(record, "quantity_usd", liquidation.quantityUsd());
+        record.put("exchange_name", liquidation.exchangeName());
     }
 
     private void putBook(GenericRecord record, L2OrderBookEvent book) {
@@ -303,6 +339,15 @@ final class ParquetMarketEventCodec {
         }
         Instrument instrument = instrument(record);
         return switch (type) {
+            case BAR -> new BarEvent(instrument, metadata,
+                    Timeframe.fromCode(string(record, "timeframe")),
+                    decimal(record, "open"), decimal(record, "high"), decimal(record, "low"),
+                    decimal(record, "close"), decimal(record, "volume"),
+                    decimal(record, "quote_volume"), (Boolean) record.get("closed"));
+            case LIQUIDATION -> new LiquidationEvent(instrument, metadata,
+                    OrderSide.valueOf(string(record, "side")), decimal(record, "price"),
+                    decimal(record, "quantity"), decimal(record, "quantity_usd"),
+                    string(record, "exchange_name"));
             case TRADE -> new TradeEvent(instrument, metadata, string(record, "trade_id"),
                     decimal(record, "price"), decimal(record, "quantity"), decimal(record, "quote_quantity"),
                     TradeSide.valueOf(string(record, "aggressor_side")));
@@ -407,6 +452,10 @@ final class ParquetMarketEventCodec {
 
     private static String nullable(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String decimalKey(BigDecimal value) {
+        return value.stripTrailingZeros().toPlainString();
     }
 
     private static String utf8(Object value) {

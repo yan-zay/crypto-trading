@@ -20,8 +20,9 @@ public interface MarketEventBus {
      * 所有订阅了该事件类型的处理器都会被调用。
      *
      * @param event 市场事件
+     * @return 事件是否通过统一准入并进入订阅者分发
      */
-    <T extends MarketEvent> void publish(T event);
+    <T extends MarketEvent> boolean publish(T event);
 
     /**
      * 订阅指定类型的事件。

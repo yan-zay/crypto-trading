@@ -163,9 +163,10 @@ public class CoinglassKlinePollingConnector implements MarketDataConnector {
     }
 
     private void publish(BarEvent bar) {
-        eventBus.publish(bar);
+        boolean admitted = eventBus.publish(bar);
         messagesReceived.incrementAndGet();
         lastMessageTimestamp.set(System.currentTimeMillis());
+        if (!admitted) return;
         for (Consumer<MarketEvent> handler : handlers) {
             try {
                 handler.accept(bar);

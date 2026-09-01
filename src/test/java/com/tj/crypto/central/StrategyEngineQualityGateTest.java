@@ -44,6 +44,7 @@ class StrategyEngineQualityGateTest {
 
     private Strategy strategy;
     private StrategyEngine engine;
+    private InMemoryEventBus eventBus;
     private StrategyContext pointInTimeContext;
     private KillSwitch killSwitch;
 
@@ -70,8 +71,10 @@ class StrategyEngineQualityGateTest {
         killSwitch = new KillSwitch();
         MarketDataQualityGate qualityGate =
                 new MarketDataQualityGate(new DataQualityChecker(), killSwitch);
-        engine = new StrategyEngine(new InMemoryEventBus(), context, mock(SignalCollector.class),
+        eventBus = new InMemoryEventBus(qualityGate);
+        engine = new StrategyEngine(eventBus, context, mock(SignalCollector.class),
                 strategyManager, List.of(), qualityGate);
+        eventBus.subscribe(com.tj.crypto.marketdata.model.MarketEvent.class, engine::onMarketEvent);
     }
 
     @Test
@@ -79,8 +82,8 @@ class StrategyEngineQualityGateTest {
         BarEvent first = bar(1_000L);
         BarEvent gap = bar(121_000L);
 
-        engine.onMarketEvent(first);
-        engine.onMarketEvent(gap);
+        eventBus.publish(first);
+        eventBus.publish(gap);
 
         verify(strategy, times(1)).onEvent(same(first), same(pointInTimeContext));
         assertThat(killSwitch.getMode()).isEqualTo(KillSwitch.Mode.HALT);
@@ -90,8 +93,8 @@ class StrategyEngineQualityGateTest {
     void dropsCompletedReplayBeforeStrategyWithoutHalting() {
         BarEvent first = bar(1_000L);
 
-        engine.onMarketEvent(first);
-        engine.onMarketEvent(first);
+        eventBus.publish(first);
+        eventBus.publish(first);
 
         verify(strategy, times(1)).onEvent(same(first), same(pointInTimeContext));
         assertThat(killSwitch.getMode()).isEqualTo(KillSwitch.Mode.NORMAL);

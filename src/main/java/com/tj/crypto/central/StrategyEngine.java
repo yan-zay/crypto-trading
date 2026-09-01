@@ -27,7 +27,7 @@ import java.util.List;
  * 接收市场事件，按策略的监听条件分发到对应策略执行。
  *
  * 分发逻辑：
- * 1. BarEvent 必须先通过运行时行情质量门
+ * 1. BarEvent 必须先由 MarketEventBus 入口完成运行时行情质量准入
  * 2. 从 StrategyManager 获取活跃（已启用）策略
  * 3. 遍历活跃策略，检查 listenedEvents() 是否包含事件类型
  * 4. 匹配策略按 strategy + instrument + timeframe 分区串行执行
@@ -43,7 +43,6 @@ public class StrategyEngine {
     private final SignalCollector signalCollector;
     private final StrategyManager strategyManager;
     private final List<SignalListener> signalListeners;
-    private final MarketDataQualityGate marketDataQualityGate;
     private final SignalLineageAudit signalLineageAudit;
     private final ConcurrentHashMap<String, Object> partitionLocks = new ConcurrentHashMap<>();
 
@@ -70,11 +69,10 @@ public class StrategyEngine {
         this.signalCollector = signalCollector;
         this.strategyManager = strategyManager;
         this.signalListeners = List.copyOf(signalListeners);
-        this.marketDataQualityGate = marketDataQualityGate;
         this.signalLineageAudit = signalLineageAudit;
     }
 
-    /** Preserve the pre-quality-gate assembly API used by isolated tests and embedders. */
+    /** Preserve the historical assembly API used by isolated tests and embedders. */
     public StrategyEngine(MarketEventBus eventBus,
                           StrategyContext strategyContext,
                           SignalCollector signalCollector,
@@ -109,15 +107,10 @@ public class StrategyEngine {
 
     /**
      * 标准化市场事件入口。
-     * 由 MarketEventBus 调用，分发到匹配的活跃策略。
+     * 由已完成统一准入的 MarketEventBus 调用，分发到匹配的活跃策略。直接调用仅用于隔离测试。
      * 禁用的策略不会收到事件。
      */
     public void onMarketEvent(MarketEvent event) {
-        if (event instanceof BarEvent bar
-                && !marketDataQualityGate.evaluate(bar).dispatchToStrategies()) {
-            return;
-        }
-
         for (StrategyManager.ActiveStrategyRelease active : strategyManager.getActiveStrategyReleases()) {
             Strategy strategy = active.strategy();
             if (strategy.listenedEvents().contains(event.getClass())) {
@@ -164,10 +157,10 @@ public class StrategyEngine {
                             if (refreshed.release().lifecycleBound()) {
                                 signal = signal.withRuntimeRelease(strategy.name(), refreshed.release());
                             }
-                            signalCollector.collect(signal);
                             for (SignalListener listener : signalListeners) {
                                 listener.onSignal(signal);
                             }
+                            signalCollector.collect(signal);
                         }
                     } catch (Exception e) {
                         log.error("Strategy {} error: {}", strategy.name(), e.getMessage(), e);

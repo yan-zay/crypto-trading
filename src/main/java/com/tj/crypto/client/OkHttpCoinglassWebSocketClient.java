@@ -3,8 +3,11 @@ package com.tj.crypto.client;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tj.crypto.common.domain.ChannelType;
+import com.tj.crypto.common.domain.Exchange;
+import com.tj.crypto.common.domain.MarketType;
 import com.tj.crypto.config.properties.CoinglassProperties;
 import com.tj.crypto.event.MarketEventBus;
+import com.tj.crypto.marketdata.archive.RealtimeMarketIngestCoordinator;
 import com.tj.crypto.marketdata.connector.ConnectorHealth;
 import com.tj.crypto.marketdata.connector.MarketDataConnector;
 import com.tj.crypto.marketdata.connector.SubscriptionRequest;
@@ -23,6 +26,7 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -58,6 +62,7 @@ public class OkHttpCoinglassWebSocketClient implements MarketDataConnector {
     private final CoinglassLiquidationNormalizer liquidationNormalizer;
     private final MarketEventBus eventBus;
     private final RawMessagePersistenceService rawMessagePersistenceService;
+    private final RealtimeMarketIngestCoordinator ingestCoordinator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final AtomicBoolean connected = new AtomicBoolean(false);
@@ -73,16 +78,28 @@ public class OkHttpCoinglassWebSocketClient implements MarketDataConnector {
     private volatile Thread reconnectThread;
     private volatile Thread pingThread;
 
+    @Autowired
     public OkHttpCoinglassWebSocketClient(OkHttpClient okHttpClient,
                                            CoinglassProperties coinglassProperties,
                                            CoinglassLiquidationNormalizer liquidationNormalizer,
                                            MarketEventBus eventBus,
-                                           RawMessagePersistenceService rawMessagePersistenceService) {
+                                           RawMessagePersistenceService rawMessagePersistenceService,
+                                           RealtimeMarketIngestCoordinator ingestCoordinator) {
         this.okHttpClient = okHttpClient;
         this.coinglassProperties = coinglassProperties;
         this.liquidationNormalizer = liquidationNormalizer;
         this.eventBus = eventBus;
         this.rawMessagePersistenceService = rawMessagePersistenceService;
+        this.ingestCoordinator = ingestCoordinator;
+    }
+
+    public OkHttpCoinglassWebSocketClient(OkHttpClient okHttpClient,
+                                          CoinglassProperties coinglassProperties,
+                                          CoinglassLiquidationNormalizer liquidationNormalizer,
+                                          MarketEventBus eventBus,
+                                          RawMessagePersistenceService rawMessagePersistenceService) {
+        this(okHttpClient, coinglassProperties, liquidationNormalizer, eventBus,
+                rawMessagePersistenceService, null);
     }
 
     @Override
@@ -190,10 +207,17 @@ public class OkHttpCoinglassWebSocketClient implements MarketDataConnector {
      */
     void handleMessage(String text) {
         if ("pong".equalsIgnoreCase(text)) return;
+        RealtimeMarketIngestCoordinator.RawCapture raw = null;
         try {
             messagesReceived.incrementAndGet();
-            lastMessageTimestamp.set(System.currentTimeMillis());
+            long receivedAt = System.currentTimeMillis();
+            lastMessageTimestamp.set(receivedAt);
 
+            if (ingestCoordinator != null) {
+                raw = ingestCoordinator.retainRaw(Exchange.COINGLASS, MarketType.PERPETUAL,
+                        "ALL", "coinglass-websocket", "application/json", text,
+                        receivedAt, receivedAt);
+            }
             JsonNodeHeader header = readHeader(text);
             // 保存原始消息（不阻塞主流程）
             try {
@@ -205,8 +229,16 @@ public class OkHttpCoinglassWebSocketClient implements MarketDataConnector {
 
             CgResultDTO<LiquidationOrder> result = objectMapper.readValue(
                     text, new TypeReference<CgResultDTO<LiquidationOrder>>() {});
-            handleData(result);
+            handleData(result, raw);
         } catch (Exception e) {
+            if (raw != null && ingestCoordinator != null) {
+                try {
+                    ingestCoordinator.recordNormalizationFailure(raw,
+                            "COINGLASS_LIQUIDATION_NORMALIZATION_FAILED", e);
+                } catch (RuntimeException journalFailure) {
+                    log.error("Cannot retain Coinglass normalization failure", journalFailure);
+                }
+            }
             log.error("Error processing Coinglass message: {}", e.getMessage(), e);
             lastError.set(e.getMessage());
         }
@@ -269,29 +301,38 @@ public class OkHttpCoinglassWebSocketClient implements MarketDataConnector {
         pingThread = null;
     }
 
-    private void handleData(CgResultDTO<LiquidationOrder> result) {
+    private void handleData(CgResultDTO<LiquidationOrder> result,
+                            RealtimeMarketIngestCoordinator.RawCapture raw) {
         try {
             List<LiquidationOrder> orderList = result.getData();
             if (orderList == null) return;
 
+            int ordinal = 0;
             for (LiquidationOrder order : orderList) {
                 if (order == null) continue;
 
                 LiquidationEvent event = liquidationNormalizer.normalize(order);
                 if (event != null) {
-                    eventBus.publish(event);
+                    RealtimeMarketIngestCoordinator.CanonicalPublish<LiquidationEvent> publishResult =
+                            ingestCoordinator == null
+                                    ? new RealtimeMarketIngestCoordinator.CanonicalPublish<>(
+                                    event, eventBus.publish(event))
+                                    : ingestCoordinator.retainCanonicalAndPublish(raw, ordinal++, event);
+                    LiquidationEvent published = publishResult.event();
+                    if (!publishResult.admitted()) continue;
                     for (Consumer<MarketEvent> handler : eventHandlers) {
                         try {
-                            handler.accept(event);
+                            handler.accept(published);
                         } catch (Exception e) {
                             log.error("Event handler error: {}", e.getMessage(), e);
                         }
                     }
                 }
             }
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("Error parsing Coinglass data: {}", e.getMessage(), e);
             lastError.set(e.getMessage());
+            throw e;
         }
     }
 
