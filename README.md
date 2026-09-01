@@ -7,6 +7,8 @@
 - 当前定位为研究、回测和模拟交易平台，真实资金结论为 **RESEARCH_ONLY / NO-GO**。
 - 全局及交易所实盘写开关默认关闭；代码、单元测试或 mock 结果不构成实盘授权。
 - Agent L3/L4 目前仅为不可执行、默认拒绝的安全契约，尚未连接 OMS 或私有交易网关；L5 永不建设。
+- 当前不对接券商，不包含 Alpaca、IBKR、FIX/FIXP 等券商订单、凭据或实盘接线；未来接入必须另行明确授权。
+- 语言边界为 Java 确定性交易内核、Python 隔离研究 worker、React/TypeScript 管理控制台；动态语言与 Agent 不得绕过 Java 风控/OMS。
 - 中长期接线状态、外部证据和时间验收以 [`docs/agentic-quant-trading-roadmap-2026-08.md`](docs/agentic-quant-trading-roadmap-2026-08.md) 为准。
 - V25 会禁用仍使用历史公开默认哈希的管理账户；部署者必须通过受控的数据库/身份流程创建唯一凭据，禁止复用示例口令。
 

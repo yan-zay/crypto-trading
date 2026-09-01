@@ -81,3 +81,17 @@ npm run test:e2e
 - 前端生产依赖审计 0 漏洞，lint/build 通过，8 项 mock-contract Playwright E2E 通过。
 - MySQL fresh/upgrade、非 mock Spring/MySQL E2E、安全 workflow、镜像构建/扫描：实现已进入 CI，尚无远端运行证据，仍为“已实现待验收”。
 - 交易所真相门当前因 Binance/OKX 活动订单/近期成交和内部账户级投影为 `UNSUPPORTED` 而保持 `BLOCKED`；专项法律、owner demo 凭据、KMS/MFA/双人审批、DR/soak 和 30～90 天 forward 证据仍未完成。
+
+## 9. 2026-09-01 P0 加强执行记录
+
+- 统一准入已从 `StrategyEngine` 下沉至 `InMemoryEventBus`：Bar 在任何具体类型、父类型或连接器回调 fanout 前检查；gap/重复事实不能旁路到策略、持久化或外部 handler。
+- Binance、OKX、Coinglass WebSocket 的受支持载荷使用 `RealtimeMarketIngestCoordinator`，raw fsync 成功后才允许 canonical journal 和总线发布；Bar/Liquidation 已有版本化 Avro/Parquet 编解码。生产对象存储、未知协议帧和 Coinglass 历史 polling 不在此验收范围。
+- `SignalPersistenceService` 成为唯一 Signal listener；`signal_event` 插入和 Paper 订单/账本事实共享同步事务，失败回滚，不再用“异步成功”掩盖投递失败。V26 禁止更新/删除已有 Signal。
+- 配置 validate/publish/rollback 加行锁、payload/checksum 复核和 hash-chain 审计；数据库生成列与唯一索引保证每个 scope 最多一个 ACTIVE，非法状态/摘要由 MySQL 拒绝。
+- 目标 MySQL 8.0.34 已从 Flyway V5 实际升级至 V26，`failed_migrations=0`；真实执行发现并修复了 V15 超长索引、V23 外键字符集以及 V24 正则字符集兼容问题。该证据只验证本机既有库 upgrade，不替代 fresh 库、Testcontainers 和 GitHub CI。
+- JDK 17 全量 `mvnw clean test`：1044 tests / 0 failures / 0 errors / 14 skipped；14 项均为 Docker daemon 不可用时跳过的 Testcontainers/MySQL 用例。前端 production audit 为 0 vulnerability，lint/build 通过，Playwright 8/8 通过；Python research worker 3/3 通过。
+- `pro + RESEARCH_ONLY` 在目标 MySQL V26 上以全部外部行情连接器和实盘写关闭的方式真实启动成功；启动探针修复了生命周期 gate 多构造器注入和“已禁用历史默认账户误阻断生产启动”问题，随后全量回归通过。
+- 依赖解析为 Spring Boot 3.5.14、Spring Framework 6.2.19、Tomcat 10.1.55、Jackson 2.21.4；本机 Docker daemon 不可用，容器构建与 Trivy 镜像结果仍必须由同一候选提交的 Security workflow 给出。
+- 当前不开展券商接入；不新增券商密钥、订单 adapter、FIX session 或券商依赖。加密 venue 写开关同样继续关闭。
+
+当前判定：本批 P0 仓库工程和目标库升级已完成；P0 整体仍因法律、owner venue、全量交易所真相、KMS/MFA、DR/soak、forward 观察和同一候选提交 CI 证据缺失而保持 **NO-GO**。

@@ -14,10 +14,12 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - 长期有界自治、Agent L3/L4、资产类别无关内核、canary/watchdog 或订单血缘工作必须核对 `docs/long-term-bounded-autonomy-implementation-2026-08.md`；当前长期模块只是不可执行安全契约/原语，L3/L4 仍为 `NOT_WIRED / NOT_VERIFIED`，L5 永不建设。
 - 该路线图定义当前 NO-GO 边界、短中长期目标、Agent 与确定性交易内核的权限边界、晋级门槛，以及不能靠代码或 mock 测试宣称完成的外部/时间验收。
 - 实现状态以代码、测试和可审计证据为准；路线图中的目标或 checklist 不自动代表已完成。
+- 当前不对接券商；未经项目所有者未来明确授权，不得新增 Alpaca、IBKR、FIX/FIXP 等券商凭据、依赖、订单 adapter 或实盘接线。资产类别无关契约不等于券商接入授权。
+- Java 继续拥有账户事实、硬风控、OMS、账本、对账与最终写权限；Python 仅用于隔离研究，TypeScript 用于控制台/受限编排，跨语言通过版本化 schema、不可变 manifest 和内容摘要协作。
 
 ## Tech Stack
 
-- Java 17 / Spring Boot 3.5.5
+- Java 17 / Spring Boot 3.5.14
 - Maven Wrapper 3.9.9（优先使用 `./mvnw` / `mvnw.cmd`，并强制 Java 17+）
 - MyBatis-Plus 3.5.14 + MySQL（默认数据库 `crypto_trading`，localhost:3306）
 - Flyway（数据库自动迁移）

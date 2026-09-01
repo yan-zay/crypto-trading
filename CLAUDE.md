@@ -8,6 +8,8 @@ This file guides Claude Code and other development agents working in this reposi
 
 当前定位：研究、持久化模拟交易和受保护实盘适配平台。系统已经实现 Binance/OKX 私有 REST、用户事件流、OMS 恢复/对账、模拟账户账本和运维工作台，但**仍不是可直接投入真实资金的生产系统**：私有适配器尚未用项目所有者的交易所测试网/小额实盘凭据完成认证，HA/DR、密钥托管、外部审计锚定和长期故障演练仍是上线阻断项。
 
+当前范围明确不对接券商：不得新增 Alpaca、IBKR、FIX/FIXP 等券商凭据、依赖、订单适配或实盘路径，除非项目所有者在未来任务中重新明确授权。Java 拥有确定性交易内核和全部最终写权限；Python 仅用于隔离研究/数据处理，TypeScript 用于控制台或受限编排，跨语言必须走版本化 schema、不可变 manifest 与内容摘要。
+
 ## Required Reading
 
 修改对应领域前必须先阅读并同步文档：
@@ -35,7 +37,7 @@ This file guides Claude Code and other development agents working in this reposi
 
 ## Tech Stack
 
-- Java 17 / Spring Boot 3.5.5
+- Java 17 / Spring Boot 3.5.14
 - Maven Wrapper 3.9.9（优先使用 `mvnw.cmd` / `./mvnw`；构建强制 JDK 17）
 - MyBatis-Plus 3.5.14 / MySQL / Flyway
 - OkHttp 4.12.0 HTTP + WebSocket

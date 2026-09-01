@@ -23,13 +23,13 @@
 
 | 长期交付 | 仓库内状态 | 运行接线状态 | 外部/时间状态 |
 |---|---|---|---|
-| 1. 资产类别无关资本与风险政策 | 通用金额/数量/标的规格、账户/子账户拓扑、签名政策及只减不增的紧急修订已实现待验收 | 持久 active head、PIT 估值、FX、OMS 原子预算与现有执行链为 `NOT_WIRED` | 合规资产目录、券商/venue 规则、真实 KMS 与多币种估值未验证 |
+| 1. 资产类别无关资本与风险政策 | 通用金额/数量/标的规格、账户/子账户拓扑、签名政策及只减不增的紧急修订已实现待验收 | 持久 active head、PIT 估值、FX、OMS 原子预算与现有执行链为 `NOT_WIRED`；当前明确不开发券商 adapter | 合规资产目录、新 venue 规则、真实 KMS 与多币种估值未验证 |
 | 2. 目标仓位执行规划和实盘硬门 | 不可派单的确定性 planner 与现有 live fail-closed 加固已实现待验收 | signer/executor、可信 PIT producer、OMS reservation 和真实 adapter 未接；现有 live 仍是加密专用 | owner venue、真实合约经济条款和交易日历未验证 |
 | 3. 长期统一晋级门 | L3/L4 分级、12 类 typed evidence、精确 subject/envelope 和失效语义已实现待验收 | 生产 evidence source/verifier、生命周期和最终写门均未接；默认拒绝 | 全部控制证据为 `NOT_VERIFIED` |
 | 4. Champion/challenger 与小资金 canary | 内容寻址指标、固定资本阶梯、逐级审批、降级/回滚/HALT 决策已实现待验收 | 生产指标 producer、durable state owner、原子 applier 和资本预算未接 | 真实 30 天窗口、多个市场状态及小资金结果未验证 |
 | 5. 独立 watchdog 与人工接管 | fail-closed 状态机、权威观察、持久 head/CAS 端口、分步双控恢复与人工接管契约已实现待验收 | 独立进程、生产 verifier、Kill Switch/OMS/告警/Agent 撤销 applier 未接 | 故障、接管、恢复、值班和长期运行演练未验证 |
 | 6. Agent L3/L4 | 不可执行 L3 建议、完整内容寻址 L4 policy、单次 capability/use 绑定及默认拒绝端口已实现待验收 | 无真实模型、controller、可信身份、持久 store、OMS 或 gateway consumer；L3/L4 均 `NOT_WIRED` | 模型红队、真实 IdP/MFA、独立审批、增量价值与长期稳定性未验证 |
-| 7. V23/V24 与每订单血缘 | 不可变控制面 schema、订单决策 envelope、OMS 可选精确绑定及 dispatch/reconciliation evidence 已实现待验收 | V23/V24 mapper/service、现有 signal/OMS 写路径、可信 verifier/store/admission 均未接 | 真实 MySQL fresh/upgrade、并发/故障和逐单证据未验证 |
+| 7. V23/V24 与每订单血缘 | 不可变控制面 schema、订单决策 envelope、OMS 可选精确绑定及 dispatch/reconciliation evidence 已实现待验收 | V23/V24 mapper/service、现有 signal/OMS 写路径、可信 verifier/store/admission 均未接 | 本机 MySQL V5→V26 upgrade 已验证；fresh/CI、并发/故障和逐单证据未验证 |
 | 8. L5 | 枚举、服务和 schema 均不提供 L5；架构契约禁止 secret/gateway/自我扩权 | 永久不接线 | **永不建设** |
 
 准确表述是：**长期仓库安全契约与确定性模型已形成，但长期交易闭环没有完成。**
@@ -91,7 +91,7 @@
 
 - 可信 PIT position/valuation producer、跨币种 FX、inverse/quanto 和交易日历；
 - 多账户/子账户身份贯穿 credential、gateway、私有流、OMS、fill、ledger、lease 与 risk reservation；
-- 独立不可导出 KMS/HSM signer、真实 broker/venue adapter、原子 OMS/资本/日损预占和成交 checkpoint；
+- 独立不可导出 KMS/HSM signer、真实 venue adapter、原子 OMS/资本/日损预占和成交 checkpoint；当前阶段不建设 broker adapter；
 - planner candidate 到 exact OMS command、V24 envelope 和最终 gateway permit 的生产链。
 
 ## 5. 交付三：长期统一 Readiness Gate
@@ -264,7 +264,7 @@ npm run test:e2e
 | 候选代码树 | 本分支“自治：建立长期有界控制面与订单血缘”提交；其后的文档与公开安全提交不改变构建输入 |
 | 工具链 | JDK `17.0.15`；Maven `3.9.9`；Node `v25.9.0`；npm `11.12.1` |
 | Java 全量回归 | workspace 临时目录下 `mvn clean test`：`1028 tests / 0 failures / 0 errors / 14 skipped`；随后 `mvn verify -DskipTests`：BUILD SUCCESS |
-| MySQL/Testcontainers V23/V24 fresh + upgrade | **NOT_VERIFIED**：Docker daemon 不可用；14 个 skipped 均为真实 MySQL/Testcontainers 集成用例，其中 V23 为 2 项、V24 为 1 项 |
+| MySQL V23/V24 upgrade | 本机 MySQL 8.0.34 已从 V5 实际升级至 V26，Flyway 26 个迁移全部 success；V15/V23/V24 真实兼容问题已修复。fresh/Testcontainers/CI 仍为 **NOT_VERIFIED** |
 | 前端 audit/lint/build | `npm audit --omit=dev --audit-level=high`：0 vulnerability；`npm run lint`、`npm run build`：通过 |
 | 前端 Playwright | mock-contract E2E `8/8` 通过；未运行真实 Spring/MySQL E2E，不能据此验证资金链 |
 | JAR SHA-256 | `2b3aa70af3c08bf38a17d877d39a2ac5d2586b0ee4f442a7965c1624f42ea548` |
@@ -305,7 +305,7 @@ npm run test:e2e
 3. L3/L4 没有真实模型、外部信任根、持久 store、OMS/gateway consumer 或目标环境证据；
 4. canary/watchdog 只返回确定性决策/intent，没有资金面原子 applier；
 5. V23/V24 仍是 schema/contract island，每订单 lineage 没有成为现有 OMS 强制入口；
-6. 专项法律、owner venue、KMS/MFA、真实 MySQL/CI、灾备/值班、30～90 天及多个市场状态证据尚未完成；
+6. 专项法律、owner venue、KMS/MFA、fresh MySQL/CI、灾备/值班、30～90 天及多个市场状态证据尚未完成；
 7. L5 按永久禁止边界没有、也不会有阶段退出路径。
 
 因此发布、部署和运行必须继续满足：
@@ -318,3 +318,11 @@ npm run test:e2e
 - 任一 evidence、current head、PIT fact、身份、store、verifier、时钟或外部服务缺失/过期/不一致时保持 **NO-GO / HALT**。
 
 本轮的完成口径只能是：**长期安全契约与确定性原语的仓库实现完成待验收；长期目标整体、L3/L4 端到端能力和真实资金自治均未完成。**
+
+## 14. 2026-09-01 长期方向补充
+
+- 终极目标保持“Agent 辅助、策略受审、权限受限、确定性内核执行”的有界自治平台；不采用 LLM 直接生成并发送订单的架构。
+- Java 保持账户真相、风险预算、OMS、账本、对账、签名与 Kill Switch 所有权；Python/未来模型服务只产生内容寻址研究制品或受限 proposal；TypeScript 负责控制台和受审工具编排。
+- 先证明 Backtest/Paper/Shadow 差分一致和 Agent 相对无 Agent 基线的增量价值，再逐级考虑 L3 人审建议与 L4 预授权 envelope；任何门槛缺失均 fail-closed。
+- 当前不对接券商，也不为 Alpaca、IBKR、FIX/FIXP 预置凭据、连接器或订单路径。资产类别无关接口只作为稳定演进边界；是否接入美股或券商必须在未来重新授权，并重新完成法律、市场规则、账户真相、交易日历和 owner contract 认证。
+- 2026-09-01 本机证据为 Java 1044/0/0/14、MySQL 8.0.34 V5→V26 upgrade 成功、`pro + RESEARCH_ONLY` 真实 Spring 启动成功、Python 3/3、前端 Playwright 8/8；这些结果不改变 L3/L4 `NOT_WIRED / NOT_VERIFIED`，也不替代 fresh CI、真实模型、owner venue 或持续时间验收。

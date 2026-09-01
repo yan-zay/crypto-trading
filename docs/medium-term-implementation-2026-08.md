@@ -22,7 +22,7 @@
 
 | 路线图中期交付 | 仓库内状态 | 运行接线状态 | 外部/时间状态 |
 |---|---|---|---|
-| 1. 多类型行情与 Parquet 数据层 | 归档模型、版本化 schema、真实 Parquet 编解码、raw-first WAL 和目录持久化屏障已实现待验收 | 实时 journal 到各连接器为 `NOT_WIRED`；尚无生产对象存储适配；不支持目录 fsync 的平台会 fail-closed | 真实连续采集、保留策略、恢复和数据完整性证据未验证 |
+| 1. 多类型行情与 Parquet 数据层 | 归档模型、版本化 schema、真实 Parquet 编解码、raw-first WAL 和目录持久化屏障已实现待验收 | Binance/OKX/Coinglass WebSocket 受支持载荷已接统一 journal；生产对象存储、未知帧和历史 polling 尚未纳入；不支持目录 fsync 的平台会 fail-closed | 真实连续采集、保留策略、恢复和数据完整性证据未验证 |
 | 2. 研究试验 registry | 不可变预登记、完整 trial family、失败试验和 hash-chain 事件已实现待验收 | 尚未强制接入所有回测、优化器、Agent 和认证流水线 | MySQL 容器迁移/并发与真实研究复现制品待验收 |
 | 3. 策略生命周期 | 签名制品、双审批、证据 TTL、状态机、回滚/自动降级已实现待验收 | 已连接 `StrategyManager` 运行时选择、`StrategyEngine` 信号血缘和 LIVE_CANARY 写入硬门；配置发布与真实 paper/shadow consumer 仍为 `NOT_WIRED` | 信任根、独立审批及法律/安全/运维/交易真相证据未验证，故 live 默认拒绝 |
 | 4. 组合分析 | 预算、相关性/集中度、压力、容量、OMS TCA 及内容寻址 PIT 输入约束已实现待验收 | 只读研究包；旧的无快照入口 fail-closed，可信快照 producer 和硬风控预占仍未接入 | 真实容量、基准 mark、交易成本、来源 manifest 和账实校验待验收 |
@@ -41,7 +41,7 @@
 - 统一归档类型：`ArchivableMarketData.java`、`ArchiveEventType.java`；
 - 版本化 schema：`src/main/resources/schema/marketdata/*.avsc`；
 - 不可变数据端口与本地实现：`ImmutableMarketDataArchive.java`、`LocalParquetMarketDataArchive.java`、`ParquetMarketEventCodec.java`；
-- raw-first WAL 与冷层压实：`LiveMarketIngestJournal.java`、`LocalFsyncMarketIngestJournal.java`、`JournalParquetCompactor.java`；
+- raw-first WAL、实时接线与冷层压实：`LiveMarketIngestJournal.java`、`LocalFsyncMarketIngestJournal.java`、`RealtimeMarketIngestCoordinator.java`、`JournalParquetCompactor.java`；
 - 显式接线状态：`RealtimeCaptureCapability.java`。
 - 数据目录迁移：`src/main/resources/db/migration/V15__create_immutable_market_data_catalog.sql`。
 
@@ -58,7 +58,7 @@
 
 ### 3.3 边界与剩余证据
 
-- `LiveMarketIngestJournal.realtimeCaptureCapability()` 当前必须保持 `NOT_WIRED`，直至 Binance、OKX、Coinglass 的原始消息都在 normalize 前完成 fsync，并有逐连接器故障测试；
+- Spring 运行装配的 `LiveMarketIngestJournal.realtimeCaptureCapability()` 对 Binance、OKX、Coinglass WebSocket 受支持载荷为 `WIRED`；普通构造器仍为 `NOT_WIRED`，生产连续运行、未知帧、历史 polling 和对象存储不得借此冒充已验收；
 - 当前对象语义实现是本地文件系统，不等于 S3/OSS/MinIO 等生产对象存储；
 - 尚需验证真实 trade/L2/mark/index/funding/OI 连续采集、断线补洞、schema 演进、分区恢复、生命周期/保留策略和跨存储校验；
 - 尚无不可变真实基准数据集的 Alpha 证据，不能据此声明黄金策略通过。
@@ -305,3 +305,17 @@ npm run test:e2e
 - `OKX_WRITE_ENABLED=false`；
 - Kill Switch、硬风控、OMS、单写者和对账权限不交给 Agent；
 - 任一证据缺失、过期、环境不一致或无法可信验证时保持 **NO-GO**。
+
+## 13. 2026-09-01 建议追加与实施状态
+
+短期优先事项已经落到统一准入、raw-first、Signal/Paper 同事务、配置并发约束和确定性目标仓位管线；P1 新增连接器认证 kit 与差分 replay verifier；P2 新增隔离 Python research worker。Python worker 使用锁定的 Polars/PyArrow 依赖，只读取校验后的本地 Parquet manifest，输出内容寻址、不可执行报告，不连接网络、数据库、OMS 或订单 API。
+
+后续建议保持以下顺序：
+
+1. 短期：取得同一候选提交的 CI/Security、fresh MySQL、真实非 mock E2E，并启动 30～90 天 Paper/Shadow；修复所有 parity 差异后才谈晋级。
+2. 中期：把 registry、PIT portfolio、connector certification 和 Agent eval 变成强制发布门；建设对象存储与连续 replay，但继续让 L1/L2 只产生研究计划或 Paper/Shadow 提案。
+3. 长期：只建设有界 L3/L4 控制面、独立 watchdog/canary 和资产无关事实内核；所有最终交易写权限继续由确定性 policy/OMS/gateway 独占，L5 永不建设。
+
+多语言决策是“Java 主内核 + Python 研究面 + TypeScript 控制台/受限编排”，通过版本化 schema、manifest 和 SHA-256 边界协作，不采用共享可变内存或让动态语言进入最终写路径。当前明确不对接券商；券商 adapter、凭据、FIX/FIXP 与美股交易日历均不属于短中期 backlog，未来需项目所有者重新明确授权。
+
+本批验证快照：Java 17 全量回归 1044 tests / 0 failures / 0 errors / 14 skipped；目标 MySQL 8.0.34 V5→V26 upgrade 成功且无失败迁移；`pro + RESEARCH_ONLY` 禁用外部连接器/实盘写的真实 Spring 启动成功；Python worker 3/3；前端 production audit 0 vulnerability、lint/build、Playwright 8/8。14 个 skip 仍是 Docker/Testcontainers 用例；本轮未提交/推送，因此 fresh CI、Security workflow 和容器镜像扫描仍为 `NOT_VERIFIED`。

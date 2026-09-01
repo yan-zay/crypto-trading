@@ -4,7 +4,7 @@
 >
 > 适用范围：当前 `crypto-trading` 仓库，以及由它演进出的研究、模拟和受控交易系统。
 >
-> 最近更新：2026-08-24。P0 执行清单见 `docs/p0-acceptance-runbook.md`；中期代码、接线和证据清单见 `docs/medium-term-implementation-2026-08.md`；长期有界自治安全契约、接线状态与外部验收清单见 `docs/long-term-bounded-autonomy-implementation-2026-08.md`。
+> 最近更新：2026-09-01。P0 执行清单见 `docs/p0-acceptance-runbook.md`；中期代码、接线和证据清单见 `docs/medium-term-implementation-2026-08.md`；长期有界自治安全契约、接线状态与外部验收清单见 `docs/long-term-bounded-autonomy-implementation-2026-08.md`。
 
 ## 1. 执行摘要
 
@@ -21,6 +21,7 @@ Agent 负责非确定性的研究、实验编排、解释和运维辅助；Java 
 - 真实资金结论为 **NO-GO**；
 - `live-write-enabled` 和交易所级写开关保持关闭；
 - 不新增“Agent 直连交易所”能力；
+- 当前阶段不对接美股或其他券商，不引入 Alpaca、IBKR、FIX/FIXP 等券商订单适配、凭据或依赖；只保留资产类别无关的领域契约，是否启动券商接入必须由项目所有者另行明确授权；
 - 优先完成 P0 事实链和一个黄金策略认证流程。
 
 ## 2. 本路线图的状态语义
@@ -93,6 +94,20 @@ Agent 负责非确定性的研究、实验编排、解释和运维辅助；Java 
 - GitHub workflow/application YAML 严格拒绝重复键并解析通过；POM/JSON、bash、PowerShell、Compose 静态检查和 `git diff --check` 通过；Actions 均固定到 40 位 commit SHA。
 
 因此，本轮可准确表述为：**P0/短期的仓库内工程实现已形成可测试基线，但 P0 和短期阶段退出条件尚未整体验收，真实资金继续 NO-GO。**
+
+### 3.5 2026-09-01 P0～P2 加强批次
+
+本批次按“先事实正确性，再可认证扩展，最后研究效率”的顺序交付：
+
+| 优先级 | 本批次仓库交付 | 当前准确状态 |
+|---|---|---|
+| P0 | Bar 在任何总线订阅者和连接器回调前统一准入；Binance/OKX/Coinglass WebSocket 识别出的实时载荷 raw-first fsync，Bar/Liquidation 可归档；Signal 与 Paper 执行同事务；`signal_event` 追加式；配置发布/回滚加锁、校验和与单 ACTIVE 约束；Paper 接入 `Target → RiskAdjustedTarget → OrderIntent`；依赖安全升级 | **仓库实现完成、目标 MySQL upgrade 已验证，生产与持续时间证据待验收** |
+| P1 | 数据连接器认证 kit 固化 raw、准入、序列、背压和 replay 合同；差分 replay 比较输入、制品、信号、订单、费用、PnL 与组合结果；CI/Security 纳入 `codex/**` 和 Python worker | **离线合同已实现，owner venue 与同一候选提交 CI 未验证** |
+| P2 | 新增隔离的 Python/Polars/PyArrow 研究 worker，只消费内容寻址 Parquet manifest，只输出 `executionAuthorized=false` 的内容寻址报告 | **研究能力已实现；不在订单、OMS、凭据或最终风控路径中** |
+
+技术边界调整为：Java 17 继续拥有领域事实、硬风控、OMS、账本、事务和所有最终写权限；Python 用于数据工程、统计研究和模型实验；React/TypeScript 用于控制台，未来如引入 Agent 编排也只能调用受 schema、预算、TTL 和审计约束的工具。跨语言通过不可变 manifest、版本化 schema 和内容摘要协作，禁止让 Python/JS/LLM 直接持有交易凭据或绕过 Java 确定性内核。
+
+短期目标的**仓库工程增量**已完成；但原路线图定义的短期阶段退出仍包含干净候选提交 CI、fresh MySQL、真实非 mock E2E、24h/7d 故障运行和 30～90 天 forward paper/shadow，不能在一次开发会话中伪造。故阶段状态为 **“工程实施完成，外部/时间验收进行中”**，不是生产 `GO`。
 
 ## 4. P0：真实资金前置阻断项
 
@@ -258,7 +273,7 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 - Agent L1 结构化假设/实验计划，Agent L2 仅 PAPER/SHADOW 的短 TTL 提案、预算、审计和撤销；审批摘要、proposal/use ID 与 verifier receipt 绑定认证 operator；
 - prompt injection、越权、投毒、工具误用、secret、复现率、成本、延迟和无 Agent 基线的确定性评测与内容寻址报告；有序 trace 覆盖完整模型/上下文/工具/审批/policy/结果链并由 evaluator 重算 root。
 
-`NOT_WIRED`：实时 raw-first journal 尚未逐一接入 Binance/OKX/Coinglass 连接器；试验 registry 尚未成为全部研究入口；策略 release 尚未接配置发布和真实 paper/shadow consumer，实盘硬门虽已接入但外部信任根默认拒绝且写开关关闭；组合分析尚未接 point-in-time 运行快照和硬风控；venue 框架没有 owner 管理的真实 probe；Agent L1/L2 尚未接真实模型，L2 仍只是不可执行提案；Agent 评测尚未接真实模型 trace、CI 和晋级门。独立组件存在不能冒充端到端能力。
+`NOT_WIRED`：WebSocket raw-first journal 已接入 Binance/OKX/Coinglass 的受支持实时载荷，但生产对象存储、连续采集/恢复证据及 Coinglass 历史 polling 路径不在该保证内；试验 registry 尚未成为全部研究入口；策略 release 尚未接配置发布和真实 shadow consumer，Paper 信号投递已同事务接线但实盘硬门仍因外部信任根默认拒绝且写开关关闭；组合分析尚未接 point-in-time 运行快照和硬风控；venue 框架没有 owner 管理的真实 probe；Agent L1/L2 尚未接真实模型，L2 仍只是不可执行提案；Agent 评测尚未接真实模型 trace、CI 和晋级门。独立组件存在不能冒充端到端能力。
 
 `外部阻塞/时间验收`：owner testnet/demo、真实 KMS/Vault/HSM 与 MFA/双人审批、PITR、RPO/RTO、外部告警到达、24h/7d soak/chaos、私有流长稳、真实模型红队、30～90 天 forward paper/shadow、专项法律意见和不可变真实数据上的 Alpha 证据均未完成。
 
@@ -270,7 +285,7 @@ P0 的目标是让系统的事实链可复现、可停止、可恢复、可对�
 
 交付：
 
-- 资产类别无关的交易内核，可按许可接入合规券商或交易场所；
+- 资产类别无关的交易内核与稳定 schema 边界；当前不开发券商接入，未来只有在项目所有者重新授权且前置门槛通过后才评估合规券商或新交易场所；
 - 多账户/子账户、venue adapter、组合资本分配和版本化风险政策；
 - shadow/champion-challenger、极小资金 canary、自动降级和人工接管；
 - Agent L3 生成实盘建议并由人批准；满足全部门槛后才考虑 L4 有界自治；
